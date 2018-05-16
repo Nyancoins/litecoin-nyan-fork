@@ -76,10 +76,10 @@ public:
         strNetworkID = "main";
         consensus.nSubsidyHalvingInterval = 500000;
         
-            consensus.BIP34Height = 999999999;
-            consensus.BIP34Hash = uint256S("fa09d204a83a768ed5a7c8d441fa62f2043abf420cff1226c7b4329aeb9d51cf");
-            consensus.BIP65Height = 999999999; // bab3041e8977e0dc3eeff63fe707b92bde1dd449d8efafb248c27c8264cc311a
-            consensus.BIP66Height = 999999999; // 7aceee012833fa8952f8835d8b1b3ae233cd6ab08fdb27a771d2bd7bdc491894
+        consensus.BIP34Height = 999999999;
+        consensus.BIP34Hash = uint256S("fa09d204a83a768ed5a7c8d441fa62f2043abf420cff1226c7b4329aeb9d51cf");
+        consensus.BIP65Height = 999999999; // bab3041e8977e0dc3eeff63fe707b92bde1dd449d8efafb248c27c8264cc311a
+        consensus.BIP66Height = 999999999; // 7aceee012833fa8952f8835d8b1b3ae233cd6ab08fdb27a771d2bd7bdc491894
         
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"); 
         consensus.nPowTargetTimespan = 3 * 60 * 60; // NyanCoin: 3 hours
@@ -191,20 +191,20 @@ class CTestNetParams : public CChainParams {
 public:
     CTestNetParams() {
         strNetworkID = "test";
-        consensus.nSubsidyHalvingInterval = 840000;
-        /*
-            consensus.BIP34Height = 76;
-            consensus.BIP34Hash = uint256S("8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573");
-            consensus.BIP65Height = 76; // 8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573
-            consensus.BIP66Height = 76; // 8075c771ed8b495ffd943980a95f702ab34fce3c8c54e379548bda33cc8c0573
-        */
+        consensus.nSubsidyHalvingInterval = 500000;
+
+        consensus.BIP34Height = 999999999;
+        consensus.BIP34Hash = uint256S("fa09d204a83a768ed5a7c8d441fa62f2043abf420cff1226c7b4329aeb9d51cf");
+        consensus.BIP65Height = 999999999; // bab3041e8977e0dc3eeff63fe707b92bde1dd449d8efafb248c27c8264cc311a
+        consensus.BIP66Height = 999999999; // 7aceee012833fa8952f8835d8b1b3ae233cd6ab08fdb27a771d2bd7bdc491894
+
         consensus.powLimit = uint256S("00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
-        consensus.nPowTargetTimespan = 3.5 * 24 * 60 * 60; // 3.5 days
-        consensus.nPowTargetSpacing = 2.5 * 60;
-        consensus.fPowAllowMinDifficultyBlocks = true;
+        consensus.nPowTargetTimespan = 3 * 60 * 60; // NyanCoin: 3 hours
+        consensus.nPowTargetSpacing = 60; // NyanCoin: 1 minute blocks
+        consensus.fPowAllowMinDifficultyBlocks = false;
         consensus.fPowNoRetargeting = false;
-        consensus.nRuleChangeActivationThreshold = 1512; // 75% for testchains
-        consensus.nMinerConfirmationWindow = 2016; // nPowTargetTimespan / nPowTargetSpacing
+        consensus.nRuleChangeActivationThreshold = 6048; // 75% of 8064
+        consensus.nMinerConfirmationWindow = consensus.nPowTargetTimespan / consensus.nPowTargetSpacing; // nPowTargetTimespan / nPowTargetSpacing 
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].bit = 28;
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nStartTime = 1199145601; // January 1, 2008
         consensus.vDeployments[Consensus::DEPLOYMENT_TESTDUMMY].nTimeout = 1230767999; // December 31, 2008
@@ -222,7 +222,7 @@ public:
         */
 
         // The best chain should have at least this much work.
-        consensus.nMinimumChainWork = uint256S("0x0000000000000000000000000000000000000000000000000000364b0cbc3568");
+        consensus.nMinimumChainWork = uint256S("0x000000000000000000000000000000000000000000000000000000000000000");
 
         // By default assume that the signatures in ancestors of this block are valid.
         consensus.defaultAssumeValid = uint256S("0xad8ff6c2f5580d2b50bd881e11312425ea84fa99f322bf132beb722f97971bba"); //153490
@@ -231,15 +231,17 @@ public:
         pchMessageStart[1] = 0xc0;
         pchMessageStart[2] = 0xb8;
         pchMessageStart[3] = 0xdb;
-        nDefaultPort = 43773;
-        nPruneAfterHeight = 1000;
+        nDefaultPort = 44701;
+        nPruneAfterHeight = 100000;
 
-        genesis = CreateGenesisBlock(1388708431, 183531, 0x1e0ffff0, 1, 0 * COIN);
+        genesis = CreateGenesisBlock(1526156266, 84274, 0x1e0ffff0, 1, 0 * COIN);
         consensus.hashGenesisBlock = genesis.GetHash();
         
-        //printf("%s\n%s\n", consensus.hashGenesisBlock.ToString().c_str(), genesis.hashMerkleRoot.ToString().c_str());
-        
-        assert(consensus.hashGenesisBlock == uint256S("0xb477d9bc0721a1b96547495404583d68123f471fdd1d4058a9adff2fa7452298"));
+        // For debugging: 
+        //printf("(SHARK) hashGenesisBlock: %s\n", consensus.hashGenesisBlock.GetHex().c_str());
+        //printf("(SHARK) hashMerkleRoot: %s\n", genesis.hashMerkleRoot.GetHex().c_str());
+
+        assert(consensus.hashGenesisBlock == uint256S("0x538de092fc982593640b499181cd9a0ded5ad5fba31664b020e8c38cd6b94550"));
         assert(genesis.hashMerkleRoot == uint256S("0xa58c3dc45c902567682edae9a0f89717e917fb9377c4b86ead909b2416110fc6"));
 
         vFixedSeeds.clear();

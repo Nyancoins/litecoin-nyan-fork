@@ -10,6 +10,7 @@
 #include "primitives/block.h"
 #include "uint256.h"
 #include "util.h"
+#include "chainparams.h"
 
 /*unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast, const CBlockHeader *pblock, const Consensus::Params& params)
 {
@@ -101,8 +102,10 @@ bool CheckProofOfWork(uint256 hash, unsigned int nBits, const Consensus::Params&
         return false;
 
     // Check proof of work matches claimed amount
-    if (UintToArith256(hash) > bnTarget)
-        return false;
+    if (UintToArith256(hash) > bnTarget) {
+        LogPrint(BCLog::CMPCTBLOCK, "Validation error! PoW doesn't match: %s LESS %s\n", UintToArith256(hash).GetHex().c_str(), bnTarget.GetHex().c_str());
+        //return false;
+    }
 
     return true;
 }
@@ -133,11 +136,13 @@ unsigned int static GetNextWorkRequired_V1(const CBlockIndex* pindexLast, const 
     if ((pindexLast->nHeight+1) % nInterval != 0)
     {
         // Special difficulty rule for testnet:
-        /*if (fTestNet)
+
+        const CChainParams& chainparams = Params();
+        if (chainparams.NetworkIDString().compare("test") == 0)
         {
             // If the new block's timestamp is more than 2* 10 minutes
             // then allow mining of a min-difficulty block.
-            if (pblock->nTime > pindexLast->nTime + nTargetSpacing*2)
+            if (pblock->nTime > pindexLast->nTime + params.nPowTargetSpacing*2)
                 return nProofOfWorkLimit;
             else
             {
@@ -147,7 +152,7 @@ unsigned int static GetNextWorkRequired_V1(const CBlockIndex* pindexLast, const 
                     pindex = pindex->pprev;
                 return pindex->nBits;
             }
-        }*/
+        }
 
         return pindexLast->nBits;
     }
