@@ -1,9 +1,6 @@
-(note: this is a temporary file, to be added-to by anybody, and moved to
-release-notes at release time)
+Litecoin Core version 0.17.1 is now available from:
 
-Litecoin Core version *0.15.0* is now available from:
-
-  <https://download.litecoin.org/litecoin-0.15.0/>
+  <https://download.litecoin.org/litecoin-0.17.1/>
 
 This is a new major version release, including new features, various bugfixes
 and performance improvements, as well as updated translations.
@@ -20,17 +17,15 @@ How to Upgrade
 ==============
 
 If you are running an older version, shut it down. Wait until it has completely
-shut down (which might take a few minutes for older versions), then run the 
+shut down (which might take a few minutes for older versions), then run the
 installer (on Windows) or just copy over `/Applications/Litecoin-Qt` (on Mac)
 or `litecoind`/`litecoin-qt` (on Linux).
 
-The first time you run version 0.15.0, your chainstate database will be converted to a
+If your node has a txindex, the txindex db will be migrated the first time you run 0.17.0 or newer, which may take up to a few hours. Your node will not be functional until this migration completes.
+
+The first time you run version 0.15.0 or newer, your chainstate database will be converted to a
 new format, which will take anywhere from a few minutes to half an hour,
 depending on the speed of your machine.
-
-The file format of `fee_estimates.dat` changed in version 0.15.0. Hence, a
-downgrade from version 0.15.0 or upgrade to version 0.15.0 will cause all fee
-estimates to be discarded.
 
 Note that the block database format also changed in version 0.8.0 and there is no
 automatic upgrade code from before version 0.8 to version 0.15.0. Upgrading
@@ -52,725 +47,1005 @@ Compatibility
 ==============
 
 Litecoin Core is extensively tested on multiple operating systems using
-the Linux kernel, macOS 10.8+, and Windows Vista and later. Windows XP is not supported.
+the Linux kernel, macOS 10.10+, and Windows 7 and newer (Windows XP is not supported).
 
 Litecoin Core should also work on most other Unix-like systems but is not
 frequently tested on them.
 
+From 0.17.0 onwards macOS <10.10 is no longer supported. 0.17.0 is built using Qt 5.9.x, which doesn't
+support versions of macOS older than 10.10.
+
+Known issues
+============
+
+- Upgrading from 0.13.0 or older currently results in memory blow-up during the roll-back of blocks to the SegWit activation point. In these cases, a full `-reindex` is necessary.
+
+- The GUI suffers from visual glitches in the new MacOS dark mode. This has to do with our Qt theme handling and is not a new problem in 0.17.0, but is expected to be resolved in 0.17.1.
+
 Notable changes
 ===============
 
-Performance Improvements
-------------------------
+`listtransactions` label support
+--------------------------------
 
-Version 0.15 contains a number of significant performance improvements, which make
-Initial Block Download, startup, transaction and block validation much faster:
+The `listtransactions` RPC `account` parameter which was deprecated in 0.17.0
+and renamed to `dummy` has been un-deprecated and renamed again to `label`.
 
-- The chainstate database (which is used for tracking UTXOs) has been changed
-  from a per-transaction model to a per-output model (See [PR 10195](https://github.com/bitcoin/bitcoin/pull/10195)). Advantages of this model
-  are that it:
-    - avoids the CPU overhead of deserializing and serializing the unused outputs;
-    - has more predictable memory usage;
-    - uses simpler code;
-    - is adaptable to various future cache flushing strategies.
+When litecoin is configured with the `-deprecatedrpc=accounts` setting, specifying
+a label/account/dummy argument will return both outgoing and incoming
+transactions. Without the `-deprecatedrpc=accounts` setting, it will only return
+incoming transactions (because it used to be possible to create transactions
+spending from specific accounts, but this is no longer possible with labels).
 
-  As a result, validating the blockchain during Initial Block Download (IBD) and reindex
-  is ~30-40% faster, uses 10-20% less memory, and flushes to disk far less frequently.
-  The only downside is that the on-disk database is 15% larger. During the conversion from the previous format
-  a few extra gigabytes may be used.
-- Earlier versions experienced a spike in memory usage while flushing UTXO updates to disk.
-  As a result, only half of the available memory was actually used as cache, and the other half was
-  reserved to accommodate flushing. This is no longer the case (See [PR 10148](https://github.com/bitcoin/bitcoin/pull/10148)), and the entirety of
-  the available cache (see `-dbcache`) is now actually used as cache. This reduces the flushing
-  frequency by a factor 2 or more.
-- In previous versions, signature validation for transactions has been cached when the
-  transaction is accepted to the mempool. Version 0.15 extends this to cache the entire script
-  validity (See [PR 10192](https://github.com/bitcoin/bitcoin/pull/10192)). This means that if a transaction in a block has already been accepted to the
-  mempool, the scriptSig does not need to be re-evaluated. Empirical tests show that
-  this results in new block validation being 40-50% faster.
-- LevelDB has been upgraded to version 1.20 (See [PR 10544](https://github.com/bitcoin/bitcoin/pull/10544)). This version contains hardware acceleration for CRC
-  on architectures supporting SSE 4.2. As a result, synchronization and block validation are now faster.
-- SHA256 hashing has been optimized for architectures supporting SSE 4 (See [PR 10821](https://github.com/bitcoin/bitcoin/pull/10821)). SHA256 is around
-  50% faster on supported hardware, which results in around 5% faster IBD and block
-  validation. In version 0.15, SHA256 hardware optimization is disabled in release builds by
-  default, but can be enabled by using `--enable-experimental-asm` when building.
-- Refill of the keypool no longer flushes the wallet between each key which resulted in a ~20x speedup in creating a new wallet. Part of this speedup was used to increase the default keypool to 1000 keys to make recovery more robust. (See [PR 10831](https://github.com/bitcoin/bitcoin/pull/10831)).
-- Scrypt hashing has been optimized for architectures supporting SSE 2 (See [PR 362](https://github.com/litecoin-project/litecoin/pull/362)). This boosts scrypt hashing performance by a factor of 2. In version 0.15, scrypt hardware optimization is disabled in release builds by default, but can be enabled by using `--enable-sse2` when building.
+When `-deprecatedrpc=accounts` is set, it's possible to pass the empty string ""
+to list transactions that don't have any label. Without
+`-deprecatedrpc=accounts`, passing the empty string is an error because returning
+only non-labeled transactions is not generally useful behavior and can cause
+confusion.
 
-Fee Estimation Improvements
+Changed configuration options
+-----------------------------
+
+- `-includeconf=<file>` can be used to include additional configuration files.
+  Only works inside the `litecoin.conf` file, not inside included files or from
+  command-line. Multiple files may be included. Can be disabled from command-
+  line via `-noincludeconf`. Note that multi-argument commands like
+  `-includeconf` will override preceding `-noincludeconf`, i.e.
+  ```
+  noincludeconf=1
+  includeconf=relative.conf
+  ```
+
+  as litecoin.conf will still include `relative.conf`.
+
+GUI changes
+-----------
+
+- Block storage can be limited under Preferences, in the Main tab. Undoing this setting requires downloading the full blockchain again. This mode is incompatible with -txindex and -rescan.
+
+External wallet files
+---------------------
+
+The `-wallet=<path>` option now accepts full paths instead of requiring wallets
+to be located in the -walletdir directory.
+
+Newly created wallet format
 ---------------------------
 
-Fee estimation has been significantly improved in version 0.15, with more accurate fee estimates used by the wallet and a wider range of options for advanced users of the `estimatesmartfee` and `estimaterawfee` RPCs (See [PR 10199](https://github.com/bitcoin/bitcoin/pull/10199)).
+If `-wallet=<path>` is specified with a path that does not exist, it will now
+create a wallet directory at the specified location (containing a wallet.dat
+data file, a db.log file, and database/log.?????????? files) instead of just
+creating a data file at the path and storing log files in the parent
+directory. This should make backing up wallets more straightforward than
+before because the specified wallet path can just be directly archived without
+having to look in the parent directory for transaction log files.
 
-### Changes to internal logic and wallet behavior
+For backwards compatibility, wallet paths that are names of existing data files
+in the `-walletdir` directory will continue to be accepted and interpreted the
+same as before.
 
-- Internally, estimates are now tracked on 3 different time horizons. This allows for longer targets and means estimates adjust more quickly to changes in conditions.
-- Estimates can now be *conservative* or *economical*. *Conservative* estimates use longer time horizons to produce an estimate which is less susceptible to rapid changes in fee conditions. *Economical* estimates use shorter time horizons and will be more affected by short-term changes in fee conditions. Economical estimates may be considerably lower during periods of low transaction activity (for example over weekends), but may result in transactions being unconfirmed if prevailing fees increase rapidly.
-- By default, the wallet will use conservative fee estimates to increase the reliability of transactions being confirmed within the desired target. For transactions that are marked as replaceable, the wallet will use an economical estimate by default, since the fee can be 'bumped' if the fee conditions change rapidly (See [PR 10589](https://github.com/bitcoin/bitcoin/pull/10589)).
-- Estimates can now be made for confirmation targets up to 1008 blocks (one week).
-- More data on historical fee rates is stored, leading to more precise fee estimates.
-- Transactions which leave the mempool due to eviction or other non-confirmed reasons are now taken into account by the fee estimation logic, leading to more accurate fee estimates.
-- The fee estimation logic will make sure enough data has been gathered to return a meaningful estimate. If there is insufficient data, a fallback default fee is used.
+Dynamic loading and creation of wallets
+---------------------------------------
 
-### Changes to fee estimate RPCs
+Previously, wallets could only be loaded or created at startup, by specifying `-wallet` parameters on the command line or in the litecoin.conf file. It is now possible to load, create and unload wallets dynamically at runtime:
 
-- The `estimatefee` RPC is now deprecated in favor of using only `estimatesmartfee` (which is the implementation used by the GUI)
-- The `estimatesmartfee` RPC interface has been changed (See [PR 10707](https://github.com/bitcoin/bitcoin/pull/10707)):
-    - The `nblocks` argument has been renamed to `conf_target` (to be consistent with other RPC methods).
-    - An `estimate_mode` argument has been added. This argument takes one of the following strings: `CONSERVATIVE`, `ECONOMICAL` or `UNSET` (which defaults to `CONSERVATIVE`).
-    - The RPC return object now contains an `errors` member, which returns errors encountered during processing.
-    - If Litecoin Core has not been running for long enough and has not seen enough blocks or transactions to produce an accurate fee estimation, an error will be returned (previously a value of -1 was used to indicate an error, which could be confused for a feerate).
-- A new `estimaterawfee` RPC is added to provide raw fee data. External clients can query and use this data in their own fee estimation logic.
+- Existing wallets can be loaded by calling the `loadwallet` RPC. The wallet can be specified as file/directory basename (which must be located in the `walletdir` directory), or as an absolute path to a file/directory.
+- New wallets can be created (and loaded) by calling the `createwallet` RPC. The provided name must not match a wallet file in the `walletdir` directory or the name of a wallet that is currently loaded.
+- Loaded wallets can be unloaded by calling the `unloadwallet` RPC.
 
-Opt into RBF When Sending
--------------------------
+This feature is currently only available through the RPC interface.
 
-A new startup option, `-walletrbf`, has been added to allow users to have all
-transactions sent opt into RBF support. The default value for this option is
-currently `false`, so transactions will not opt into RBF by default. The new
-`bumpfee` RPC can be used to replace transactions that opt into RBF.
+Coin selection
+--------------
 
-Replace-by-fee control in the GUI
----------------------------------
+### Partial spend avoidance
 
-In version 0.15, creating an opt-in RBF transaction and replacing the unconfirmed transaction with a higher-fee transaction are both supported in the GUI (See PR 9592).
+When an address is paid multiple times the coins from those separate payments can be spent separately which hurts privacy due to linking otherwise separate addresses. A new `-avoidpartialspends` flag has been added (default=false). If enabled, the wallet will always spend existing UTXO to the same address together even if it results in higher fees. If someone were to send coins to an address after it was used, those coins will still be included in future coin selections.
 
-Multi-wallet support
---------------------
+Fee policy changes
+------------------
 
-Litecoin Core now supports loading multiple, separate wallets (See [PR 8694](https://github.com/bitcoin/bitcoin/pull/8694), [PR 10849](https://github.com/bitcoin/bitcoin/pull/10849)). The wallets are completely separated, with individual balances, keys and received transactions.
+The default minimum transaction fee `-mintxfee` has been lowered to 0.0001 LTC/kB after relaxing the minimum relay and dust relay fee rates in prior releases. 
 
-Multi-wallet is enabled by using more than one `-wallet` argument when starting Litecoin, either on the command line or in the Litecoin config file.
+Configuration sections for testnet and regtest
+----------------------------------------------
 
-**In Litecoin-Qt, only the first wallet will be displayed and accessible for creating and signing transactions.** GUI selectable multiple wallets will be supported in a future version. However, even in 0.15 other loaded wallets will remain synchronized to the node's current tip in the background. This can be useful if running a pruned node, since loading a wallet where the most recent sync is beyond the pruned height results in having to download and revalidate the whole blockchain. Continuing to synchronize all wallets in the background avoids this problem.
+It is now possible for a single configuration file to set different
+options for different networks. This is done by using sections or by
+prefixing the option with the network, such as:
 
-Litecoin Core 0.15.0 contains the following changes to the RPC interface and `litecoin-cli` for multi-wallet:
+    main.uacomment=litecoin
+    test.uacomment=litecoin-testnet
+    regtest.uacomment=regtest
+    [main]
+    mempoolsize=300
+    [test]
+    mempoolsize=100
+    [regtest]
+    mempoolsize=20
 
-* When running Litecoin Core with a single wallet, there are **no** changes to the RPC interface or `litecoin-cli`. All RPC calls and `litecoin-cli` commands continue to work as before.
-* When running Litecoin Core with multi-wallet, all *node-level* RPC methods continue to work as before. HTTP RPC requests should be send to the normal `<RPC IP address>:<RPC port>/` endpoint, and `litecoin-cli` commands should be run as before. A *node-level* RPC method is any method which does not require access to the wallet.
-* When running Litecoin Core with multi-wallet, *wallet-level* RPC methods must specify the wallet for which they're intended in every request. HTTP RPC requests should be send to the `<RPC IP address>:<RPC port>/wallet/<wallet name>/` endpoint, for example `127.0.0.1:9332/wallet/wallet1.dat/`. `litecoin-cli` commands should be run with a `-rpcwallet` option, for example `litecoin-cli -rpcwallet=wallet1.dat getbalance`.
-* A new *node-level* `listwallets` RPC method is added to display which wallets are currently loaded. The names returned by this method are the same as those used in the HTTP endpoint and for the `rpcwallet` argument.
+If the following options are not in a section, they will only apply to mainnet:
+`addnode=`, `connect=`, `port=`, `bind=`, `rpcport=`, `rpcbind=` and `wallet=`.
+The options to choose a network (`regtest=` and `testnet=`) must be specified
+outside of sections.
 
-Note that while multi-wallet is now fully supported, the RPC multi-wallet interface should be considered unstable for version 0.15.0, and there may backwards-incompatible changes in future versions.
+'label' and 'account' APIs for wallet
+-------------------------------------
 
-Removal of Coin Age Priority
-----------------------------
+A new 'label' API has been introduced for the wallet. This is intended as a
+replacement for the deprecated 'account' API. The 'account' can continue to
+be used in V0.17 by starting litecoind with the '-deprecatedrpc=accounts'
+argument, and will be fully removed in V0.18.
 
-In previous versions of Litecoin Core, a portion of each block could be reserved for transactions based on the age and value of UTXOs they spent. This concept (Coin Age Priority) is a policy choice by miners, and there are no consensus rules around the inclusion of Coin Age Priority transactions in blocks. In practice, only a few miners continue to use Coin Age Priority for transaction selection in blocks. Litecoin Core 0.15 removes all remaining support for Coin Age Priority (See [PR 9602](https://github.com/bitcoin/bitcoin/pull/9602)). This has the following implications:
+The label RPC methods mirror the account functionality, with the following functional differences:
 
-- The concept of *free transactions* has been removed. High Coin Age Priority transactions would previously be allowed to be relayed even if they didn't attach a miner fee. This is no longer possible since there is no concept of Coin Age Priority. The `-limitfreerelay` and `-relaypriority` options which controlled relay of free transactions have therefore been removed.
-- The `-sendfreetransactions` option has been removed, since almost all miners do not include transactions which do not attach a transaction fee.
-- The `-blockprioritysize` option has been removed.
-- The `estimatepriority` and `estimatesmartpriority` RPCs have been removed.
-- The `getmempoolancestors`, `getmempooldescendants`, `getmempoolentry` and `getrawmempool` RPCs no longer return `startingpriority` and `currentpriority`.
-- The `prioritisetransaction` RPC no longer takes a `priority_delta` argument, which is replaced by a `dummy` argument for backwards compatibility with clients using positional arguments. The RPC is still used to change the apparent fee-rate of the transaction by using the `fee_delta` argument.
-- `-minrelaytxfee` can now be set to 0. If `minrelaytxfee` is set, then fees smaller than `minrelaytxfee` (per kB) are rejected from relaying, mining and transaction creation. This defaults to 1000 satoshi/kB.
-- The `-printpriority` option has been updated to only output the fee rate and hash of transactions included in a block by the mining code.
+- Labels can be set on any address, not just receiving addresses. This functionality was previously only available through the GUI.
+- Labels can be deleted by reassigning all addresses using the `setlabel` RPC method.
+- There isn't support for sending transactions _from_ a label, or for determining which label a transaction was sent from.
+- Labels do not have a balance.
 
-Mempool Persistence Across Restarts
------------------------------------
+Here are the changes to RPC methods:
 
-Version 0.14 introduced mempool persistence across restarts (the mempool is saved to a `mempool.dat` file in the data directory prior to shutdown and restores the mempool when the node is restarted). Version 0.15 allows this feature to be switched on or off using the `-persistmempool` command-line option (See [PR 9966](https://github.com/bitcoin/bitcoin/pull/9966)). By default, the option is set to true, and the mempool is saved on shutdown and reloaded on startup. If set to false, the `mempool.dat` file will not be loaded on startup or saved on shutdown.
+| Deprecated Method       | New Method            | Notes       |
+| :---------------------- | :-------------------- | :-----------|
+| `getaccount`            | `getaddressinfo`      | `getaddressinfo` returns a json object with address information instead of just the name of the account as a string. |
+| `getaccountaddress`     | n/a                   | There is no replacement for `getaccountaddress` since labels do not have an associated receive address. |
+| `getaddressesbyaccount` | `getaddressesbylabel` | `getaddressesbylabel` returns a json object with the addresses as keys, instead of a list of strings. |
+| `getreceivedbyaccount`  | `getreceivedbylabel`  | _no change in behavior_ |
+| `listaccounts`          | `listlabels`          | `listlabels` does not return a balance or accept `minconf` and `watchonly` arguments. |
+| `listreceivedbyaccount` | `listreceivedbylabel` | Both methods return new `label` fields, along with `account` fields for backward compatibility. |
+| `move`                  | n/a                   | _no replacement_ |
+| `sendfrom`              | n/a                   | _no replacement_ |
+| `setaccount`            | `setlabel`            | Both methods now: <ul><li>allow assigning labels to any address, instead of raising an error if the address is not receiving address.<li>delete the previous label associated with an address when the final address using that label is reassigned to a different label, instead of making an implicit `getaccountaddress` call to ensure the previous label still has a receiving address. |
 
-New RPC methods
----------------
+| Changed Method         | Notes   |
+| :--------------------- | :------ |
+| `addmultisigaddress`   | Renamed `account` named parameter to `label`. Still accepts `account` for backward compatibility if running with '-deprecatedrpc=accounts'. |
+| `getnewaddress`        | Renamed `account` named parameter to `label`. Still accepts `account` for backward compatibility. if running with '-deprecatedrpc=accounts' |
+| `listunspent`          | Returns new `label` fields. `account` field will be returned for backward compatibility if running with '-deprecatedrpc=accounts' |
+| `sendmany`             | The `account` named parameter has been renamed to `dummy`. If provided, the `dummy` parameter must be set to the empty string, unless running with the `-deprecatedrpc=accounts` argument (in which case functionality is unchanged). |
+| `listtransactions`     | The `account` named parameter has been renamed to `dummy`. If provided, the `dummy` parameter must be set to the string `*`, unless running with the `-deprecatedrpc=accounts` argument (in which case functionality is unchanged). |
+| `getbalance`           | `account`, `minconf` and `include_watchonly` parameters are deprecated, and can only be used if running with '-deprecatedrpc=accounts' |
 
-Version 0.15 introduces several new RPC methods:
+BIP 174 Partially Signed Litecoin Transactions support
+-----------------------------------------------------
 
-- `abortrescan` stops current wallet rescan, e.g. when triggered by an `importprivkey` call (See [PR 10208](https://github.com/bitcoin/bitcoin/pull/10208)).
-- `combinerawtransaction` accepts a JSON array of raw transactions and combines them into a single raw transaction (See [PR 10571](https://github.com/bitcoin/bitcoin/pull/10571)).
-- `estimaterawfee` returns raw fee data so that customized logic can be implemented to analyze the data and calculate estimates. See [Fee Estimation Improvements](#fee-estimation-improvements) for full details on changes to the fee estimation logic and interface.
-- `getchaintxstats` returns statistics about the total number and rate of transactions
-  in the chain (See [PR 9733](https://github.com/bitcoin/bitcoin/pull/9733)).
-- `listwallets` lists wallets which are currently loaded. See the *Multi-wallet* section
-  of these release notes for full details (See [Multi-wallet support](#multi-wallet-support)).
-- `uptime` returns the total runtime of the `bitcoind` server since its last start (See [PR 10400](https://github.com/bitcoin/bitcoin/pull/10400)).
+[BIP 174 PSBT](https://github.com/bitcoin/bips/blob/master/bip-0174.mediawiki) is an interchange format for Litecoin transactions that are not fully signed
+yet, together with relevant metadata to help entities work towards signing it.
+It is intended to simplify workflows where multiple parties need to cooperate to
+produce a transaction. Examples include hardware wallets, multisig setups, and
+[CoinJoin](https://bitcointalk.org/?topic=279249) transactions.
+
+For backend RPC convenience, the Litecoin devs have supported to keep the acronym `PSBT`
+instead of `PSLT` to make crosschain application support easier.
+
+### Overall workflow
+
+Overall, the construction of a fully signed Litecoin transaction goes through the
+following steps:
+
+- A **Creator** proposes a particular transaction to be created. He constructs
+  a PSBT that contains certain inputs and outputs, but no additional metadata.
+- For each input, an **Updater** adds information about the UTXOs being spent by
+  the transaction to the PSBT.
+- A potentially other Updater adds information about the scripts and public keys
+  involved in each of the inputs (and possibly outputs) of the PSBT.
+- **Signers** inspect the transaction and its metadata to decide whether they
+  agree with the transaction. They can use amount information from the UTXOs
+  to assess the values and fees involved. If they agree, they produce a
+  partial signature for the inputs for which they have relevant key(s).
+- A **Finalizer** is run for each input to convert the partial signatures and
+  possibly script information into a final `scriptSig` and/or `scriptWitness`.
+- An **Extractor** produces a valid Litecoin transaction (in network format)
+  from a PSBT for which all inputs are finalized.
+
+Generally, each of the above (excluding Creator and Extractor) will simply
+add more and more data to a particular PSBT. In a naive workflow, they all have
+to operate sequentially, passing the PSBT from one to the next, until the
+Extractor can convert it to a real transaction. In order to permit parallel
+operation, **Combiners** can be employed which merge metadata from different
+PSBTs for the same unsigned transaction.
+
+The names above in bold are the names of the roles defined in BIP174. They're
+useful in understanding the underlying steps, but in practice, software and
+hardware implementations will typically implement multiple roles simultaneously.
+
+### RPCs
+
+- **`converttopsbt` (Creator)** is a utility RPC that converts an
+  unsigned raw transaction to PSBT format. It ignores existing signatures.
+- **`createpsbt` (Creator)** is a utility RPC that takes a list of inputs and
+  outputs and converts them to a PSBT with no additional information. It is
+  equivalent to calling `createrawtransaction` followed by `converttopsbt`.
+- **`walletcreatefundedpsbt` (Creator, Updater)** is a wallet RPC that creates a
+  PSBT with the specified inputs and outputs, adds additional inputs and change
+  to it to balance it out, and adds relevant metadata. In particular, for inputs
+  that the wallet knows about (counting towards its normal or watch-only
+  balance), UTXO information will be added. For outputs and inputs with UTXO
+  information present, key and script information will be added which the wallet
+  knows about. It is equivalent to running `createrawtransaction`, followed by
+  `fundrawtransaction`, and `converttopsbt`.
+- **`walletprocesspsbt` (Updater, Signer, Finalizer)** is a wallet RPC that takes as
+  input a PSBT, adds UTXO, key, and script data to inputs and outputs that miss
+  it, and optionally signs inputs. Where possible it also finalizes the partial
+  signatures.
+- **`finalizepsbt` (Finalizer, Extractor)** is a utility RPC that finalizes any
+  partial signatures, and if all inputs are finalized, converts the result to a
+  fully signed transaction which can be broadcast with `sendrawtransaction`.
+- **`combinepsbt` (Combiner)** is a utility RPC that implements a Combiner. It
+  can be used at any point in the workflow to merge information added to
+  different versions of the same PSBT. In particular it is useful to combine the
+  output of multiple Updaters or Signers.
+- **`decodepsbt`** is a diagnostic utility RPC which will show all information in
+  a PSBT in human-readable form, as well as compute its eventual fee if known.
+
+Upgrading non-HD wallets to HD wallets
+--------------------------------------
+
+Since Litecoin Core 0.13.0, creating new BIP 32 Hierarchical Deterministic wallets has been supported by Litecoin Core but old non-HD wallets could not be upgraded to HD. Now non-HD wallets can be upgraded to HD using the `-upgradewallet` command line option. This upgrade will result in the all keys in the keypool being marked as used and a new keypool generated. **A new backup must be made when this upgrade is performed.**
+
+Additionally, `-upgradewallet` can be used to upgraded from a non-split HD chain (all keys generated with `m/0'/0'/i'`) to a split HD chain (receiving keys generated with `'m/0'/0'/i'` and change keys generated with `m'/0'/1'/i'`). When this upgrade occurs, all keys already in the keypool will remain in the keypool to be used until all keys from before the upgrade are exhausted. This is to avoid issues with backups and downgrades when some keys may come from the change key keypool. Users can begin using the new split HD chain keypools by using the `newkeypool` RPC to mark all keys in the keypool as used and begin using a new keypool generated from the split HD chain.
+
+HD Master key rotation
+----------------------
+
+A new RPC, `sethdseed`, has been introduced which allows users to set a new HD seed or set their own HD seed. This allows for a new HD seed to be used. **A new backup must be made when a new HD seed is set.**
 
 Low-level RPC changes
 ---------------------
 
-- When using Litecoin Core in multi-wallet mode, RPC requests for wallet methods must specify
-  the wallet that they're intended for. See [Multi-wallet support](#multi-wallet-support) for full details.
+- The new RPC `scantxoutset` can be used to scan the UTXO set for entries
+  that match certain output descriptors. Refer to the [output descriptors
+  reference documentation](descriptors.md) for more details. This call
+  is similar to `listunspent` but does not use a wallet, meaning that the
+  wallet can be disabled at compile or run time. This call is experimental,
+  as such, is subject to changes or removal in future releases.
 
-- The new database model no longer stores information about transaction
-  versions of unspent outputs (See [Performance improvements](#performance-improvements)). This means that:
-  - The `gettxout` RPC no longer has a `version` field in the response.
-  - The `gettxoutsetinfo` RPC reports `hash_serialized_2` instead of `hash_serialized`,
-    which does not commit to the transaction versions of unspent outputs, but does
-    commit to the height and coinbase information.
-  - The `getutxos` REST path no longer reports the `txvers` field in JSON format,
-    and always reports 0 for transaction versions in the binary format
+- The `createrawtransaction` RPC will now accept an array or dictionary (kept for compatibility) for the `outputs` parameter. This means the order of transaction outputs can be specified by the client.
+- The `fundrawtransaction` RPC will reject the previously deprecated `reserveChangeKey` option.
+- `sendmany` now shuffles outputs to improve privacy, so any previously expected behavior with regards to output ordering can no longer be relied upon.
+- The new RPC `testmempoolaccept` can be used to test acceptance of a transaction to the mempool without adding it.
+- JSON transaction decomposition now includes a `weight` field which provides
+  the transaction's exact weight. This is included in REST /rest/tx/ and
+  /rest/block/ endpoints when in json mode. This is also included in `getblock`
+  (with verbosity=2), `listsinceblock`, `listtransactions`, and
+  `getrawtransaction` RPC commands.
+- New `fees` field introduced in `getrawmempool`, `getmempoolancestors`, `getmempooldescendants` and
+   `getmempoolentry` when verbosity is set to `true` with sub-fields `ancestor`, `base`, `modified`
+   and `descendant` denominated in LTC. This new field deprecates previous fee fields, such as
+   `fee`, `modifiedfee`, `ancestorfee` and `descendantfee`.
+- The new RPC `getzmqnotifications` returns information about active ZMQ
+  notifications.
+- When litecoin is not started with any `-wallet=<path>` options, the name of
+  the default wallet returned by `getwalletinfo` and `listwallets` RPCs is
+  now the empty string `""` instead of `"wallet.dat"`. If litecoin is started
+  with any `-wallet=<path>` options, there is no change in behavior, and the
+  name of any wallet is just its `<path>` string.
+- Passing an empty string (`""`) as the `address_type` parameter to
+  `getnewaddress`, `getrawchangeaddress`, `addmultisigaddress`,
+  `fundrawtransaction` RPCs is now an error. Previously, this would fall back
+  to using the default address type. It is still possible to pass null or leave
+  the parameter unset to use the default address type.
 
-- The `estimatefee` RPC is deprecated. Clients should switch to using the `estimatesmartfee` RPC, which returns better fee estimates. See [Fee Estimation Improvements](#fee-estimation-improvements) for full details on changes to the fee estimation logic and interface.
+- Bare multisig outputs to our keys are no longer automatically treated as
+  incoming payments. As this feature was only available for multisig outputs for
+  which you had all private keys in your wallet, there was generally no use for
+  them compared to single-key schemes. Furthermore, no address format for such
+  outputs is defined, and wallet software can't easily send to it. These outputs
+  will no longer show up in `listtransactions`, `listunspent`, or contribute to
+  your balance, unless they are explicitly watched (using `importaddress` or
+  `importmulti` with hex script argument). `signrawtransaction*` also still
+  works for them.
 
-- The `gettxoutsetinfo` response now contains `disk_size` and `bogosize` instead of
-  `bytes_serialized`. The first is a more accurate estimate of actual disk usage, but
-  is not deterministic. The second is unrelated to disk usage, but is a
-  database-independent metric of UTXO set size: it counts every UTXO entry as 50 + the
-  length of its scriptPubKey (See [PR 10426](https://github.com/bitcoin/bitcoin/pull/10426)).
+- The `getwalletinfo` RPC method now returns an `hdseedid` value, which is always the same as the incorrectly-named `hdmasterkeyid` value. `hdmasterkeyid` will be removed in V0.18.
+- The `getaddressinfo` RPC method now returns an `hdseedid` value, which is always the same as the incorrectly-named `hdmasterkeyid` value. `hdmasterkeyid` will be removed in V0.18.
 
-- `signrawtransaction` can no longer be used to combine multiple transactions into a single transaction. Instead, use the new `combinerawtransaction` RPC (See [PR 10571](https://github.com/bitcoin/bitcoin/pull/10571)).
+- Parts of the `validateaddress` RPC method have been deprecated and moved to
+  `getaddressinfo`. Clients must transition to using `getaddressinfo` to access
+  this information before upgrading to v0.18. The following deprecated fields
+  have moved to `getaddressinfo` and will only be shown with
+  `-deprecatedrpc=validateaddress`: `ismine`, `iswatchonly`, `script`, `hex`,
+  `pubkeys`, `sigsrequired`, `pubkey`, `addresses`, `embedded`, `iscompressed`,
+  `account`, `timestamp`, `hdkeypath`, `hdmasterkeyid`.
+- `signrawtransaction` is deprecated and will be fully removed in v0.18. To use
+  `signrawtransaction` in v0.17, restart litecoind with
+  `-deprecatedrpc=signrawtransaction`. Projects should transition to using
+  `signrawtransactionwithkey` and `signrawtransactionwithwallet` before
+  upgrading to v0.18.
 
-- `fundrawtransaction` no longer accepts a `reserveChangeKey` option. This option used to allow RPC users to fund a raw transaction using an key from the keypool for the change address without removing it from the available keys in the keypool. The key could then be re-used for a `getnewaddress` call, which could potentially result in confusing or dangerous behaviour (See [PR 10784](https://github.com/bitcoin/bitcoin/pull/10784)).
+Other API changes
+-----------------
 
-- `estimatepriority` and `estimatesmartpriority` have been removed. See [Removal of Coin Age Priority](#removal-of-coin-age-priority).
+- The `inactivehdmaster` property in the `dumpwallet` output has been corrected to `inactivehdseed`
 
-- The `listunspent` RPC now takes a `query_options` argument (see [PR 8952](https://github.com/bitcoin/bitcoin/pull/8952)), which is a JSON object
-  containing one or more of the following members:
-  - `minimumAmount` - a number specifying the minimum value of each UTXO
-  - `maximumAmount` - a number specifying the maximum value of each UTXO
-  - `maximumCount` - a number specifying the minimum number of UTXOs
-  - `minimumSumAmount` - a number specifying the minimum sum value of all UTXOs
+### Logging
 
-- The `getmempoolancestors`, `getmempooldescendants`, `getmempoolentry` and `getrawmempool` RPCs no longer return `startingpriority` and `currentpriority`. See [Removal of Coin Age Priority](#removal-of-coin-age-priority).
+- The log timestamp format is now ISO 8601 (e.g. "2018-02-28T12:34:56Z").
 
-- The `dumpwallet` RPC now returns the full absolute path to the dumped wallet. It
-  used to return no value, even if successful (See [PR 9740](https://github.com/bitcoin/bitcoin/pull/9740)).
+- When running litecoind with `-debug` but without `-daemon`, logging to stdout
+  is now the default behavior. Setting `-printtoconsole=1` no longer implicitly
+  disables logging to debug.log. Instead, logging to file can be explicitly disabled
+  by setting `-debuglogfile=0`.
 
-- In the `getpeerinfo` RPC, the return object for each peer now returns an `addrbind` member, which contains the ip address and port of the connection to the peer. This is in addition to the `addrlocal` member which contains the ip address and port of the local node as reported by the peer (See [PR 10478](https://github.com/bitcoin/bitcoin/pull/10478)).
+Transaction index changes
+-------------------------
 
-- The `disconnectnode` RPC can now disconnect a node specified by node ID (as well as by IP address/port). To disconnect a node based on node ID, call the RPC with the new `nodeid` argument (See [PR 10143](https://github.com/bitcoin/bitcoin/pull/10143)).
+The transaction index is now built separately from the main node procedure,
+meaning the `-txindex` flag can be toggled without a full reindex. If litecoind
+is run with `-txindex` on a node that is already partially or fully synced
+without one, the transaction index will be built in the background and become
+available once caught up. When switching from running `-txindex` to running
+without the flag, the transaction index database will *not* be deleted
+automatically, meaning it could be turned back on at a later time without a full
+resync.
 
-- The second argument in `prioritisetransaction` has been renamed from `priority_delta` to `dummy` since Bitcoin Core no longer has a concept of coin age priority. The `dummy` argument has no functional effect, but is retained for positional argument compatibility. See [Removal of Coin Age Priority](#removal-of-coin-age-priority).
+Miner block size removed
+------------------------
 
-- The `resendwallettransactions` RPC throws an error if the `-walletbroadcast` option is set to false (See [PR 10995](https://github.com/bitcoin/bitcoin/pull/10995)).
+The `-blockmaxsize` option for miners to limit their blocks' sizes was
+deprecated in V0.15.1, and has now been removed. Miners should use the
+`-blockmaxweight` option if they want to limit the weight of their blocks.
 
-- The second argument in the `submitblock` RPC argument has been renamed from `parameters` to `dummy`. This argument never had any effect, and the renaming is simply to communicate this fact to the user (See [PR 10191](https://github.com/bitcoin/bitcoin/pull/10191))
-  (Clients should, however, use positional arguments for `submitblock` in order to be compatible with BIP 22.)
+Python Support
+--------------
 
-- The `verbose` argument of `getblock` has been renamed to `verbosity` and now takes an integer from 0 to 2. Verbose level 0 is equivalent to `verbose=false`. Verbose level 1 is equivalent to `verbose=true`. Verbose level 2 will give the full transaction details of each transaction in the output as given by `getrawtransaction`. The old behavior of using the `verbose` named argument and a boolean value is still maintained for compatibility.
+Support for Python 2 has been discontinued for all test files and tools.
 
-- Error codes have been updated to be more accurate for the following error cases (See [PR 9853](https://github.com/bitcoin/bitcoin/pull/9853)):
-  - `getblock` now returns RPC_MISC_ERROR if the block can't be found on disk (for
-  example if the block has been pruned). Previously returned RPC_INTERNAL_ERROR.
-  - `pruneblockchain` now returns RPC_MISC_ERROR if the blocks cannot be pruned
-  because the node is not in pruned mode. Previously returned RPC_METHOD_NOT_FOUND.
-  - `pruneblockchain` now returns RPC_INVALID_PARAMETER if the blocks cannot be pruned
-  because the supplied timestamp is too late. Previously returned RPC_INTERNAL_ERROR.
-  - `pruneblockchain` now returns RPC_MISC_ERROR if the blocks cannot be pruned
-  because the blockchain is too short. Previously returned RPC_INTERNAL_ERROR.
-  - `setban` now returns RPC_CLIENT_INVALID_IP_OR_SUBNET if the supplied IP address
-  or subnet is invalid. Previously returned RPC_CLIENT_NODE_ALREADY_ADDED.
-  - `setban` now returns RPC_CLIENT_INVALID_IP_OR_SUBNET if the user tries to unban
-  a node that has not previously been banned. Previously returned RPC_MISC_ERROR.
-  - `removeprunedfunds` now returns RPC_WALLET_ERROR if `bitcoind` is unable to remove
-  the transaction. Previously returned RPC_INTERNAL_ERROR.
-  - `removeprunedfunds` now returns RPC_INVALID_PARAMETER if the transaction does not
-  exist in the wallet. Previously returned RPC_INTERNAL_ERROR.
-  - `fundrawtransaction` now returns RPC_INVALID_ADDRESS_OR_KEY if an invalid change
-  address is provided. Previously returned RPC_INVALID_PARAMETER.
-  - `fundrawtransaction` now returns RPC_WALLET_ERROR if `bitcoind` is unable to create
-  the transaction. The error message provides further details. Previously returned
-  RPC_INTERNAL_ERROR.
-  - `bumpfee` now returns RPC_INVALID_PARAMETER if the provided transaction has
-  descendants in the wallet. Previously returned RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_INVALID_PARAMETER if the provided transaction has
-  descendants in the mempool. Previously returned RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction has
-  has been mined or conflicts with a mined transaction. Previously returned
-  RPC_INVALID_ADDRESS_OR_KEY.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction is not
-  BIP 125 replaceable. Previously returned RPC_INVALID_ADDRESS_OR_KEY.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction has already
-  been bumped by a different transaction. Previously returned RPC_INVALID_REQUEST.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction contains
-  inputs which don't belong to this wallet. Previously returned RPC_INVALID_ADDRESS_OR_KEY.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction has multiple change
-  outputs. Previously returned RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the provided transaction has no change
-  output. Previously returned RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the fee is too high. Previously returned
-  RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the fee is too low. Previously returned
-  RPC_MISC_ERROR.
-  - `bumpfee` now returns RPC_WALLET_ERROR if the change output is too small to bump the
-  fee. Previously returned RPC_MISC_ERROR.
-
-0.15.0 Change log
+0.17.1 change log
 =================
 
-### RPC and other APIs
-- #9485 `61a640e` ZMQ example using python3 and asyncio (mcelrath)
-- #9894 `0496e15` remove 'label' filter for rpc command help (instagibbs)
-- #9853 `02bd6e9` Fix error codes from various RPCs (jnewbery)
-- #9842 `598ef9c` Fix RPC failure testing (continuation of #9707) (jnewbery)
-- #10038 `d34995a` Add mallocinfo mode to `getmemoryinfo` RPC (laanwj)
-- #9500 `3568b30` [Qt][RPC] Autocomplete commands for 'help' command in debug console (achow101)
-- #10056 `e6156a0` [zmq] Call va_end() on va_start()ed args (kallewoof)
-- #10086 `7438cea` Trivial: move rpcserialversion into RPC option group (jlopp)
-- #10150 `350b224` [rpc] Add logging rpc (jnewbery)
-- #10208 `393160c` [wallet] Rescan abortability (kallewoof)
-- #10143 `a987def` [net] Allow disconnectnode RPC to be called with node id (jnewbery)
-- #10281 `0e8499c` doc: Add RPC interface guidelines (laanwj)
-- #9733 `d4732f3` Add getchaintxstats RPC (sipa)
-- #10310 `f4b15e2` [doc] Add hint about getmempoolentry to getrawmempool help (kallewoof)
-- #8704 `96c850c` [RPC] Transaction details in getblock (achow101)
-- #8952 `9390845` Add query options to listunspent RPC call (pedrobranco)
-- #10413 `08ac35a` Fix docs (there's no rpc command setpaytxfee) (RHavar)
-- #8384 `e317c0d` Add witness data output to TxInError messages (instagibbs)
-- #9571 `4677151` RPC: getblockchaininfo returns BIP signaling statistics  (pinheadmz)
-- #10450 `ef2d062` Fix bumpfee rpc "errors" return value (ryanofsky)
-- #10475 `39039b1` [RPC] getmempoolinfo mempoolminfee is a BTC/KB feerate (instagibbs)
-- #10478 `296928e` rpc: Add listen address to incoming connections in `getpeerinfo` (laanwj)
-- #10403 `08d0390` Fix importmulti failure to return rescan errors (ryanofsky)
-- #9740 `9fec4da` Add friendly output to dumpwallet (aideca)
-- #10426 `16f6c98` Replace bytes_serialized with bogosize (sipa)
-- #10252 `980deaf` RPC/Mining: Restore API compatibility for prioritisetransaction (luke-jr)
-- #9672 `46311e7` Opt-into-RBF for RPC & bitcoin-tx (luke-jr)
-- #10481 `9c248e3` Decodehextx scripts sanity check  (achow101)
-- #10488 `fa1f106` Note that the prioritizetransaction dummy value is deprecated, and has no meaning (TheBlueMatt)
-- #9738 `c94b89e` gettxoutproof() should return consistent result (jnewbery)
-- #10191 `00350bd` [trivial] Rename unused RPC arguments 'dummy' (jnewbery)
-- #10627 `b62b4c8` fixed listunspent rpc convert parameter (tnakagawa)
-- #10412 `bef02fb` Improve wallet rescan API (ryanofsky)
-- #10400 `1680ee0` [RPC] Add an uptime command that displays the amount of time (in seconds) bitcoind has been running (rvelhote)
-- #10683 `d81bec7` rpc: Move the `generate` RPC call to rpcwallet (laanwj)
-- #10710 `30bc0f6` REST/RPC example update (Mirobit)
-- #10747 `9edda0c` [rpc] fix verbose argument for getblock in bitcoin-cli (jnewbery)
-- #10589 `104f5f2` More economical fee estimates for RBF and RPC options to control (morcos)
-- #10543 `b27b004` Change API to estimaterawfee (morcos)
-- #10807 `afd2fca` getbalance example covers at least 6 confirms (instagibbs)
-- #10707 `75b5643` Better API for estimatesmartfee RPC  (morcos)
-- #10784 `9e8d6a3` Do not allow users to get keys from keypool without reserving them (TheBlueMatt)
-- #10857 `d445a2c` [RPC] Add a deprecation warning to getinfo's output (achow101)
-- #10571 `adf170d` [RPC]Move transaction combining from signrawtransaction to new RPC (achow101)
-- #10783 `041dad9` [RPC] Various rpc argument fixes (instagibbs)
-- #9622 `6ef3c7e` [rpc] listsinceblock should include lost transactions when parameter is a reorg'd block (kallewoof)
-- #10799 `8537187` Prevent user from specifying conflicting parameters to fundrawtx (TheBlueMatt)
-- #10931 `0b11a07` Fix misleading "Method not found" multiwallet errors (ryanofsky)
-- #10788 `f66c596` [RPC] Fix addwitnessaddress by replacing ismine with producesignature (achow101)
-- #10999 `627c3c0` Fix amounts formatting in `decoderawtransaction` (laanwj)
-- #11002 `4268426` [wallet] return correct error code from resendwallettransaction (jnewbery)
-- #11029 `96a63a3` [RPC] trivial: gettxout no longer shows version of tx (FelixWeis)
-- #11083 `6c2b008` Fix combinerawtransaction RPC help result section (jonasnick)
-- #11027 `07164bb` [RPC] Only return hex field once in getrawtransaction (achow101)
-- #10698 `5af6572` Be consistent in calling transactions "replaceable" for Opt-In RBF (TheBlueMatt)
+### Consensus
+- #12204 `3fa24bb` Fix overly eager BIP30 bypass (morcos)
+
+### Policy
+- #12568 `ed6ae80` Allow dustrelayfee to be set to zero (luke-jr)
+- #13120 `ca2a233` Treat segwit as always active (MarcoFalke)
+- #13096 `062738c` Fix `MAX_STANDARD_TX_WEIGHT` check (jl2012)
+
+### Mining
+- #12693 `df529dc` Remove unused variable in SortForBlock (drewx2)
+- #12448 `84efa9a` Interrupt block generation on shutdown request (promag)
 
 ### Block and transaction handling
-- #9801 `a8c5751` Removed redundant parameter from mempool.PrioritiseTransaction (gubatron)
-- #9819 `1efc99c` Remove harmless read of unusued priority estimates (morcos)
-- #9822 `b7547fa` Remove block file location upgrade code (benma)
-- #9602 `30ff3a2` Remove coin age priority and free transactions - implementation (morcos)
-- #9548 `47510ad` Remove min reasonable fee (morcos)
-- #10249 `c73af54` Switch CCoinsMap from boost to std unordered_map (sipa)
-- #9966 `2a183de` Control mempool persistence using a command line parameter (jnewbery)
-- #10199 `318ea50` Better fee estimates (morcos)
-- #10196 `bee3529` Bugfix: PrioritiseTransaction updates the mempool tx counter (sdaftuar)
-- #10195 `1088b02` Switch chainstate db and cache to per-txout model (sipa)
-- #10284 `c2ab38b` Always log debug information for fee calculation in CreateTransaction (morcos)
-- #10503 `efbcf2b` Use REJECT_DUPLICATE for already known and conflicted txn (sipa)
-- #10537 `b3eb0d6` Few Minor per-utxo assert-semantics re-adds and tweak (TheBlueMatt)
-- #10626 `8c841a3` doc: Remove outdated minrelaytxfee comment (MarcoFalke)
-- #10559 `234ffc6` Change semantics of HaveCoinInCache to match HaveCoin (morcos)
-- #10581 `7878353` Simplify return values of GetCoin/HaveCoin(InCache) (sipa)
-- #10684 `a381f6a` Remove no longer used mempool.exists(outpoint) (morcos)
-- #10148 `d4e551a` Use non-atomic flushing with block replay (sipa)
-- #10685 `30c2130` Clarify CCoinsViewMemPool documentation (TheBlueMatt)
-- #10558 `90a002e` Address nits from per-utxo change (morcos)
-- #10706 `6859ad2` Improve wallet fee logic and fix GUI bugs (morcos)
-- #10526 `754aa02` Force on-the-fly compaction during pertxout upgrade (sipa)
-- #10985 `d896d5c` Add undocumented -forcecompactdb to force LevelDB compactions (sipa)
-- #10292 `e4bbd3d` Improved efficiency in COutPoint constructors (mm-s)
-- #10290 `8d6d43e` Add -stopatheight for benchmarking (sipa)
+- #12225 `67447ba` Mempool cleanups (sdaftuar)
+- #12356 `fd65937` Fix 'mempool min fee not met' debug output (Empact)
+- #12287 `bf3353d` Optimise lock behaviour for GuessVerificationProgress() (jonasschnelli)
+- #11889 `47a7666` Drop extra script variable in ProduceSignature (ryanofsky)
+- #11880 `d59b8d6` Stop special-casing phashBlock handling in validation for TBV (TheBlueMatt)
+- #12431 `947c25e` Only call NotifyBlockTip when chainActive changes (jamesob)
+- #12653 `534b8fa` Allow to optional specify the directory for the blocks storage (jonasschnelli)
+- #12172 `3b62a91` Bugfix: RPC: savemempool: Don't save until LoadMempool() is finished (jtimon)
+- #12167 `88430cb` Make segwit failure due to `CLEANSTACK` violation return a `SCRIPT_ERR_CLEANSTACK` error code (maaku)
+- #12561 `24133b1` Check for block corruption in ConnectBlock() (sdaftuar)
+- #11617 `1b5723e` Avoid lock: Call FlushStateToDisk(…) regardless of fCheckForPruning (practicalswift)
+- #11739 `0a8b7b4` Enforce `SCRIPT_VERIFY_P2SH` and `SCRIPT_VERIFY_WITNESS` from genesis (sdaftuar)
+- #12885 `a49381d` Reduce implementation code inside CScript (sipa)
+- #13032 `34dd1a6` Output values for "min relay fee not met" error (kristapsk)
+- #13033 `a07e8ca` Build txindex in parallel with validation (jimpo)
+- #13080 `66cc47b` Add compile time checking for ::mempool.cs runtime locking assertions (practicalswift)
+- #13185 `08c1caf` Bugfix: the end of a reorged chain is invalid when connect fails (sipa)
+- #11689 `0264836` Fix missing locking in CTxMemPool::check(…) and CTxMemPool::setSanityCheck(…) (practicalswift)
+- #13011 `3c2a41a` Cache witness hash in CTransaction (MarcoFalke)
+- #13191 `0de7cc8` Specialized double-SHA256 with 64 byte inputs with SSE4.1 and AVX2 (sipa)
+- #13243 `ea263e1` Make reusable base class for auxiliary indices (jimpo)
+- #13393 `a607d23` Enable double-SHA256-for-64-byte code on 32-bit x86 (sipa)
+- #13428 `caabdea` validation: check the specified number of blocks (off-by-one) (kallewoof)
+- #13438 `450055b` Improve coverage of SHA256 SelfTest code (sipa)
+- #13431 `954f4a9` validation: count blocks correctly for check level < 3 (kallewoof)
+- #13386 `3a3eabe` SHA256 implementations based on Intel SHA Extensions (sipa)
+- #11658 `9a1ad2c` During IBD, when doing pruning, prune 10% extra to avoid pruning again soon after (luke-jr)
+- #13794 `8ce55df` chainparams: Update with data from assumed valid chain (MarcoFalke)
+- #13527 `e7ea858` Remove promiscuousmempoolflags (MarcoFalke)
 
 ### P2P protocol and network code
-- #9726 `7639d38` netbase: Do not print an error on connection timeouts through proxy (laanwj)
-- #9805 `5b583ef` Add seed.btc.petertodd.org to mainnet DNS seeds (petertodd)
-- #9861 `22f609f` Trivial: Debug log ambiguity fix for peer addrs (keystrike)
-- #9774 `90cb2a2` Enable host lookups for -proxy and -onion parameters (jmcorgan)
-- #9558 `7b585cf` Clarify assumptions made about when BlockCheck is called (TheBlueMatt)
-- #10135 `e19586a` [p2p] Send the correct error code in reject messages (jnewbery)
-- #9665 `eab00d9` Use cached [compact] blocks to respond to getdata messages (TheBlueMatt)
-- #10215 `a077a90` Check interruptNet during dnsseed lookups (TheBlueMatt)
-- #10234 `faf2dea` [net] listbanned RPC and QT should show correct banned subnets (jnewbery)
-- #10134 `314ebdf` [qa] Fixes segwit block relay test after inv-direct-fetch was disabled (sdaftuar)
-- #10351 `3f57c55` removed unused code in INV message (Greg-Griffith)
-- #10061 `ae78609` [net] Added SetSocketNoDelay() utility function (tjps)
-- #10408 `28c6e8d` Net: Improvements to Tor control port parser (str4d)
-- #10460 `5c63d66` Broadcast address every day, not 9 hours (sipa)
-- #10471 `400fdd0` Denote functions CNode::GetRecvVersion() and CNode::GetRefCount()  as const (pavlosantoniou)
-- #10345 `67700b3` [P2P] Timeout for headers sync (sdaftuar)
-- #10564 `8d9f45e` Return early in IsBanned (gmaxwell)
-- #10587 `de8db47` Net: Fix resource leak in ReadBinaryFile(...) (practicalswift)
-- #9549 `b33ca14` [net] Avoid possibility of NULL pointer dereference in MarkBlockAsInFlight(...) (practicalswift)
-- #10446 `2772dc9` net: avoid extra dns query per seed (theuni)
-- #10824 `9dd6a2b` Avoid unnecessary work in SetNetworkActive (promag)
-- #10948 `df3a6f4` p2p: Hardcoded seeds update pre-0.15 branch (laanwj)
-- #10977 `02f4c4a` [net] Fix use of uninitialized value in getnetworkinfo(const JSONRPCRequest&) (practicalswift)
-- #10982 `c8b62c7` Disconnect network service bits 6 and 8 until Aug 1, 2018 (TheBlueMatt)
-- #11012 `0e5cff6` Make sure to clean up mapBlockSource if we've already seen the block (theuni)
-
-### Validation
-- #9725 `67023e9` CValidationInterface Cleanups (TheBlueMatt)
-- #10178 `2584925` Remove CValidationInterface::UpdatedTransaction (TheBlueMatt)
-- #10201 `a6548a4` pass Consensus::Params& to functions in validation.cpp and make them static (mariodian)
-- #10297 `431a548` Simplify DisconnectBlock arguments/return value (sipa)
-- #10464 `f94b7d5` Introduce static DoWarning (simplify UpdateTip) (jtimon)
-- #10569 `2e7d8f8` Fix stopatheight (achow101)
-- #10192 `2935b46` Cache full script execution results in addition to signatures (TheBlueMatt)
-- #10179 `21ed30a` Give CValidationInterface Support for calling notifications on the CScheduler Thread (TheBlueMatt)
-- #10557 `66270a4` Make check to distinguish between orphan txs and old txs more efficient (morcos)
-- #10775 `7c2400c` nCheckDepth chain height fix (romanornr)
-- #10821 `16240f4` Add SSE4 optimized SHA256 (sipa)
-- #10854 `04d395e` Avoid using sizes on non-fixed-width types to derive protocol constants (gmaxwell)
-- #10945 `2a50b11` Update defaultAssumeValid according to release-process.md (gmaxwell)
-- #10986 `2361208` Update chain transaction statistics (sipa)
-- #11028 `6bdf4b3` Avoid masking of difficulty adjustment errors by checkpoints (sipa)
-- #9533 `cb598cf` Allow non-power-of-2 signature cache sizes (sipa)
-- #9208 `acd9957` Improve DisconnectTip performance (sdaftuar)
-- #10618 `f90603a` Remove confusing MAX_BLOCK_BASE_SIZE (gmaxwell)
-- #10758 `bd92424` Fix some chainstate-init-order bugs (TheBlueMatt)
-- #10550 `b7296bc` Don't return stale data from CCoinsViewCache::Cursor() (ryanofsky)
-- #10998 `2507fd5` Fix upgrade cancel warnings (TheBlueMatt)
-- #9868 `cbdb473` Abstract out the command line options for block assembly (sipa)
-
-### Build system
-- #9727 `5f0556d` Remove fallbacks for boost_filesystem < v3 (laanwj)
-- #9788 `50a2265` gitian: bump descriptors for master (theuni)
-- #9794 `7ca2f54` Minor update to qrencode package builder (mitchellcash)
-- #9514 `2cc0df1` release: Windows signing script (theuni)
-- #9921 `8b789d8` build: Probe MSG_DONTWAIT in the same way as MSG_NOSIGNAL (laanwj)
-- #10011 `32d1b34` build: Fix typo s/HAVE_DONTWAIT/HAVE_MSG_DONTWAIT (laanwj)
-- #9946 `90dd9e6` Fix build errors if spaces in path or parent directory (pinheadmz)
-- #10136 `81da4c7` build: Disable Wshadow warning (laanwj)
-- #10166 `64962ae` Ignore Doxyfile generated from Doxyfile.in template (paveljanik)
-- #10239 `0416ea9` Make Boost use std::atomic internally (sipa)
-- #10228 `27faa6c` build: regenerate bitcoin-config.h as necessary (theuni)
-- #10273 `8979f45` [scripts] Minor improvements to `macdeployqtplus` script (chrisgavin)
-- #10325 `a26280b` 0.15.0 Depends Updates (fanquake)
-- #10328 `79aeff6` Update contrib/debian to latest Ubuntu PPA upload (TheBlueMatt)
-- #7522 `d25449f` Bugfix: Only use git for build info if the repository is actually the right one (luke-jr)
-- #10489 `e654d61` build: silence gcc7's implicit fallthrough warning (theuni)
-- #10549 `ad1a13e` Avoid printing generic and duplicated "checking for QT" during ./configure (drizzt)
-- #10628 `8465b68` [depends] expat 2.2.1 (fanquake)
-- #10806 `db825d2` build: verify that the assembler can handle crc32 functions (theuni)
-- #10766 `b4d03be` Building Environment: Set ARFLAGS to cr (ReneNyffenegger)
-- #10803 `91edda8` Explicitly search for bdb5.3 (pstratem)
-- #10855 `81560b0` random: only use getentropy on openbsd (theuni)
-- #10508 `1caafa6` Run Qt wallet tests on travis (ryanofsky)
-- #10851 `e222618` depends: fix fontconfig with newer glibc (theuni)
-- #10971 `88b1e4b` build: fix missing sse42 in depends builds (theuni)
-- #11097 `129b03f` gitian: quick hack to fix version string in releases (theuni)
-- #10039 `919aaf6` Fix compile errors with Qt 5.3.2 and Boost 1.55.0 (ryanofsky)
-- #10168 `7032021` Fix build warning from #error text (jnewbery)
-- #10301 `318392c` Check if sys/random.h is required for getentropy (jameshilliard)
-
-### GUI
-- #9724 `1a9fd5c` Qt/Intro: Add explanation of IBD process (luke-jr)
-- #9834 `b00ba62` qt: clean up initialize/shutdown signals (benma)
-- #9481 `ce01e62` [Qt] Show more significant warning if we fall back to the default fee (jonasschnelli)
-- #9974 `b9f930b` Add basic Qt wallet test (ryanofsky)
-- #9690 `a387d3a` Change 'Clear' button string to 'Reset' (da2x)
-- #9592 `9c7b7cf` [Qt] Add checkbox in the GUI to opt-in to RBF when creating a transaction (ryanofsky)
-- #10098 `2b477e6` Make qt wallet test compatible with qt4 (ryanofsky)
-- #9890 `1fa4ae6` Add a button to open the config file in a text editor (ericshawlinux)
-- #10156 `51833a1` Fix for issues with startup and multiple monitors on windows (AllanDoensen)
-- #10177 `de01da7` Changed "Send" button default status from true to false (KibbledJiveElkZoo)
-- #10221 `e96486c` Stop treating coinbase outputs differently in GUI: show them at 1conf (TheBlueMatt)
-- #10231 `987a6c0` [Qt] Reduce a significant cs_main lock freeze (jonasschnelli)
-- #10242 `f6f3b58` [qt] Don't call method on null WalletModel object (ryanofsky)
-- #10093 `a3e756b` [Qt] Don't add arguments of sensitive command to console window (jonasschnelli)
-- #10362 `95546c8` [GUI] Add OSX keystroke to RPCConsole info (spencerlievens)
-- #9697 `962cd3f` [Qt] simple fee bumper with user verification (jonasschnelli)
-- #10390 `e477516` [wallet] remove minimum total fee option (instagibbs)
-- #10420 `4314544` Add Qt tests for wallet spends & bumpfee (ryanofsky)
-- #10454 `c1c9a95` Fix broken q4 test build (ryanofsky)
-- #10449 `64beb13` Overhaul Qt fee bumper (jonasschnelli)
-- #10582 `7c72fb9` Pass in smart fee slider value to coin control dialog (morcos)
-- #10673 `4c72cc3` [qt] Avoid potential null pointer dereference in TransactionView::exportClicked() (practicalswift)
-- #10769 `8fdd23a` [Qt] replace fee slider with a Dropdown, extend conf. targets (jonasschnelli)
-- #10870 `412b466` [Qt] Use wallet 0 in rpc console if running with multiple wallets (jonasschnelli)
-- #10988 `a9dd111` qt: Increase BLOCK_CHAIN_SIZE constants (laanwj)
-- #10644 `e292140` Slightly overhaul NSI pixmaps (jonasschnelli)
-- #10660 `0c3542e` Allow to cancel the txdb upgrade via splashscreen keypress 'q' (jonasschnelli)
+- #12342 `eaeaa2d` Extend #11583 ("Do not make it trivial for inbound peers to generate log entries") to include "version handshake timeout" message (clemtaylor)
+- #12218 `9a32114` Move misbehaving logging to net logging category (laanwj)
+- #10387 `5c2aff8` Eventually connect to `NODE_NETWORK_LIMITED` peers (jonasschnelli)
+- #9037 `a36834f` Add test-before-evict discipline to addrman (EthanHeilman)
+- #12622 `e1d6e2a` Correct addrman logging (laanwj)
+- #11962 `0a01843` add seed.bitcoin.sprovoost.nl to DNS seeds (Sjors)
+- #12569 `23e7fe8` Increase signal-to-noise ratio in debug.log by adjusting log level when logging failed non-manual connect():s (practicalswift)
+- #12855 `c199869` Minor accumulated cleanups (tjps)
+- #13153 `ef46c99` Add missing newlines to debug logging (laanwj)
+- #13162 `a174702` Don't incorrectly log that REJECT messages are unknown (jnewbery)
+- #13151 `7f4db9a` Serve blocks directly from disk when possible (laanwj)
+- #13134 `70d3541` Add option `-enablebip61` to configure sending of BIP61 notifications (laanwj)
+- #13532 `7209fec` Log warning when deprecated network name 'tor' is used (wodry)
+- #13615 `172f984` Remove unused interrupt from SendMessages (fanquake)
+- #13417 `1e90862` Tighten scope in `net_processing` (skeees)
+- #13298 `f8d470e` Bucketing INV delays (1 bucket) for incoming connections to hide tx time (naumenkogs)
+- #13672 `0d8d6be` Modified `in_addr6` cast in CConman class to work with msvc (sipsorcery)
+- #11637 `c575260` Remove dead service bits code (MarcoFalke)
+- #13212 `a6f00ce` Fixed a race condition when disabling the network (lmanners)
+- #13656 `1211b15` Remove the boost/algorithm/string/predicate.hpp dependency (251Labs)
+- #13423 `f58674a` Thread safety annotations in `net_processing` (skeees)
+- #13776 `7d36237` Add missing verification of IPv6 address in CNetAddr::GetIn6Addr(…) (practicalswift)
+- #13907 `48bf8ff` Introduce a maximum size for locators (gmaxwell)
+- #13951 `8a9ffec` Hardcoded seeds update pre-0.17 branch (laanwj)
+- #14685 `9406502` Fix a deserialization overflow edge case (kazcw)
+- #14728 `b901578` Fix uninitialized read when stringifying an addrLocal (kazcw)
 
 ### Wallet
-- #9359 `f7ec7cf` Add test for CWalletTx::GetImmatureCredit() returning stale values (ryanofsky)
-- #9576 `56ab672` [wallet] Remove redundant initialization (practicalswift)
-- #9333 `fa625b0` Document CWalletTx::mapValue entries and remove erase of nonexistent "version" entry (ryanofsky)
-- #9906 `72fb515` Disallow copy constructor CReserveKeys (instagibbs)
-- #9369 `3178b2c` Factor out CWallet::nTimeSmart computation into a method (ryanofsky)
-- #9830 `afcd7c0` Add safe flag to listunspent result (NicolasDorier)
-- #9993 `c49355c` Initialize nRelockTime (pstratem)
-- #9818 `3d857f3` Save watch only key timestamps when reimporting keys (ryanofsky)
-- #9294 `f34cdcb` Use internal HD chain for change outputs (hd split) (jonasschnelli)
-- #10164 `e183ea2` Wallet: reduce excess logic InMempool() (kewde)
-- #10186 `c9ff4f8` Remove SYNC_TRANSACTION_NOT_IN_BLOCK magic number (jnewbery)
-- #10226 `64c45aa` wallet: Use boost to more portably ensure -wallet specifies only a filename (luke-jr)
-- #9827 `c91ca0a` Improve ScanForWalletTransactions return value (ryanofsky)
-- #9951 `fa1ac28` Wallet database handling abstractions/simplifications (laanwj)
-- #10265 `c29a0d4` [wallet] [moveonly] Check non-null pindex before potentially referencing (kallewoof)
-- #10283 `a550f6e` Cleanup: reduce to one GetMinimumFee call signature (morcos)
-- #10294 `e2b99b1` [Wallet] unset change position when there is no change (instagibbs)
-- #10115 `d3dce0e` Avoid reading the old hd master key during wallet encryption (TheBlueMatt)
-- #10341 `18c9deb` rpc/wallet: Workaround older UniValue which returns a std::string temporary for get_str (luke-jr)
-- #10308 `94e5227` [wallet] Securely erase potentially sensitive keys/values (tjps)
-- #10257 `ea1fd43` [test] Add test for getmemoryinfo (jimmysong)
-- #10295 `ce8176d` [qt] Move some WalletModel functions into CWallet (ryanofsky)
-- #10506 `7cc2c67` Fix bumpfee test after #10449 (ryanofsky)
-- #10500 `098b01d` Avoid CWalletTx copies in GetAddressBalances and GetAddressGroupings (ryanofsky)
-- #10455 `0747d33` Simplify feebumper minimum fee code slightly (ryanofsky)
-- #10522 `2805d60` [wallet] Remove unused variables (practicalswift)
-- #8694 `177433a` Basic multiwallet support (luke-jr)
-- #10598 `7a74f88` Supress struct/class mismatch warnings introduced in #10284 (paveljanik)
-- #9343 `209eef6` Don't create change at dust limit (morcos)
-- #10744 `ed88e31` Use method name via __func__ macro (darksh1ne)
-- #10712 `e8b9523` Add change output if necessary to reduce excess fee (morcos)
-- #10816 `1c011ff` Properly forbid -salvagewallet and -zapwallettxes for multi wallet (morcos)
-- #10235 `5cfdda2` Track keypool entries as internal vs external in memory (TheBlueMatt)
-- #10330 `bf0a08b` [wallet] fix zapwallettxes interaction with persistent mempool (jnewbery)
-- #10831 `0b01935` Batch flushing operations to the walletdb during top up and increase keypool size (gmaxwell)
-- #10795 `7b6e8bc` No longer ever reuse keypool indexes (TheBlueMatt)
-- #10849 `bde4f93` Multiwallet: simplest endpoint support (jonasschnelli)
-- #10817 `9022aa3` Redefine Dust and add a discard_rate (morcos)
-- #10883 `bf3b742` Rename -usewallet to -rpcwallet (morcos)
-- #10604 `420238d` [wallet] [tests] Add listwallets RPC, include wallet name in `getwalletinfo` and add multiwallet test (jnewbery)
-- #10885 `70888a3` Reject invalid wallets (promag)
-- #10949 `af56397` Clarify help message for -discardfee (morcos)
-- #10942 `2e857bb` Eliminate fee overpaying edge case when subtracting fee from recipients (morcos)
-- #10995 `fa64636` Fix resendwallettransactions assert failure if -walletbroadcast=0 (TheBlueMatt)
-- #11022 `653a46d` Basic keypool topup (jnewbery)
-- #11081 `9fe1f6b` Add length check for CExtKey deserialization (jonasschnelli, guidovranken)
-- #11044 `4ef8374` [wallet] Keypool topup cleanups (jnewbery)
-- #11145 `e51bb71` Fix rounding bug in calculation of minimum change (morcos)
-- #9605 `779f2f9` Use CScheduler for wallet flushing, remove ThreadFlushWalletDB (TheBlueMatt)
-- #10108 `4e3efd4` ApproximateBestSubset should take inputs by reference, not value (RHavar)
+- #12330 `2a30e67` Reduce scope of `cs_main` and `cs_wallet` locks in listtransactions (promag)
+- #12298 `a1ffddb` Refactor HaveKeys to early return on false result (promag)
+- #12282 `663911e` Disallow abandon of conflicted txes (MarcoFalke)
+- #12333 `d405bee` Make CWallet::ListCoins atomic (promag)
+- #12296 `8e6f9f4` Only fee-bump non-conflicted/non-confirmed txes (MarcoFalke)
+- #11866 `6bb9c13` Do not un-mark fInMempool on wallet txn if ATMP fails (TheBlueMatt)
+- #11882 `987a809` Disable default fallbackfee on mainnet (jonasschnelli)
+- #9991 `4ca7c1e` listreceivedbyaddress Filter Address (NicolasDorier)
+- #11687 `98bc27f` External wallet files (ryanofsky)
+- #12658 `af88094` Sanitize some wallet serialization (sipa)
+- #9680 `6acd870` Unify CWalletTx construction (ryanofsky)
+- #10637 `e057589` Coin Selection with Murch's algorithm (achow101, Xekyo)
+- #12408 `c39dd2e` Change output type globals to members (MarcoFalke)
+- #12694 `9552dfb` Actually disable BnB when there are preset inputs (achow101)
+- #11536 `cead84b` Rename account to label where appropriate (ryanofsky)
+- #12709 `02b7e83` shuffle sendmany recipients ordering (instagibbs)
+- #12699 `c948dc8` Shuffle transaction inputs before signing (instagibbs)
+- #10762 `6d53663` Remove Wallet dependencies from init.cpp (jnewbery)
+- #12857 `821980c` Avoid travis lint-include-guards error (ken2812221)
+- #12702 `dab0d68` importprivkey: hint about importmulti (kallewoof)
+- #12836 `9abdb7c` Make WalletInitInterface and DummyWalletInit private, fix nullptr deref (promag)
+- #12785 `215158a` Initialize `m_last_block_processed` to nullptr (practicalswift)
+- #12932 `8d651ae` Remove redundant lambda function arg in handleTransactionChanged (laanwj)
+- #12749 `a84b056` feebumper: discard change outputs below discard rate (instagibbs)
+- #12892 `9b3370d` introduce 'label' API for wallet (jnewbery)
+- #12925 `6d3de17` Logprint the start of a rescan (jonasschnelli)
+- #12888 `39439e5` debug log number of unknown wallet records on load (instagibbs)
+- #12977 `434150a` Refactor `g_wallet_init_interface` to const reference (promag)
+- #13017 `65d7083` Add wallets management functions (promag)
+- #12953 `d1d54ae` Deprecate accounts (jnewbery)
+- #12909 `476cb35` Make fee settings to be non-static members (MarcoFalke)
+- #13002 `487dcbe` Do not treat bare multisig outputs as IsMine unless watched (sipa)
+- #13028 `783bb64` Make vpwallets usage thread safe (promag)
+- #12507 `2afdc29` Interrupt rescan on shutdown request (promag)
+- #12729 `979150b` Get rid of ambiguous OutputType::NONE value (ryanofsky)
+- #13079 `5778d44` Fix rescanblockchain rpc to properly report progress (Empact)
+- #12560 `e03c0db` Upgrade path for non-HD wallets to HD (achow101)
+- #13161 `7cc1bd3` Reset BerkeleyDB handle after connection fails (real-or-random)
+- #13081 `0dec5b5` Add compile time checking for `cs_wallet` runtime locking assertions (practicalswift)
+- #13127 `19a3a9e` Add Clang thread safety annotations for variables guarded by `cs_db` (practicalswift)
+- #10740 `4cfe17c` `loadwallet` RPC - load wallet at runtime (jnewbery)
+- #12924 `6738813` Fix hdmaster-key / seed-key confusion (scripted diff) (jnewbery)
+- #13297 `d82c5d1` Fix incorrect comment for DeriveNewSeed (jnewbery)
+- #13063 `6378eef` Use shared pointer to retain wallet instance (promag)
+- #13142 `56fe3dc` Separate IsMine from solvability (sipa)
+- #13194 `fd96d54` Remove template matching and pseudo opcodes (sipa)
+- #13252 `c4cc8d9` Refactor ReserveKeyFromKeyPool for safety (Empact)
+- #13058 `343d4e4` `createwallet` RPC - create new wallet at runtime (jnewbery)
+- #13351 `2140f6c` Prevent segfault when sending to unspendable witness (MarcoFalke)
+- #13060 `3f0f394` Remove getlabeladdress RPC (jnewbery)
+- #13111 `000abbb` Add unloadwallet RPC (promag)
+- #13160 `868cf43` Unlock spent outputs (promag)
+- #13498 `f54f373` Fixups from account API deprecation (jnewbery)
+- #13491 `61a044a` Improve handling of INVALID in IsMine (sipa)
+- #13425 `028b0d9` Moving final scriptSig construction from CombineSignatures to ProduceSignature (PSBT signer logic) (achow101)
+- #13564 `88a15eb` loadwallet shouldn't create new wallets (jnewbery)
+- #12944 `619cd29` ScanforWalletTransactions should mark input txns as dirty (instagibbs)
+- #13630 `d6b2235` Drop unused pindexRet arg to CMerkleTx::GetDepthInMainChain (Empact)
+- #13566 `ad552a5` Fix get balance (jnewbery)
+- #13500 `4a3e8c5` Decouple wallet version from client version (achow101)
+- #13712 `aba2e66` Fix non-determinism in ParseHDKeypath(…). Avoid using an uninitialized variable in path calculation (practicalswift)
+- #9662 `6b6e854` Add createwallet "disableprivatekeys" option: a sane mode for watchonly-wallets (jonasschnelli)
+- #13683 `e8c7434` Introduce assertion to document the assumption that cache and cache_used are always set in tandem (practicalswift)
+- #12257 `5f7575e` Use destination groups instead of coins in coin select (kallewoof)
+- #13773 `89a116d` Fix accidental use of the comma operator (practicalswift)
+- #13805 `c88529a` Correctly limit output group size (sdaftuar)
+- #12992 `26f59f5` Add wallet name to log messages (PierreRochard)
+- #13667 `b81a8a5` Fix backupwallet for multiwallets (domob1812)
+- #13657 `51c693d` assert to ensure accuracy of CMerkleTx::GetBlocksToMaturity (Empact)
+- #13812 `9d86aad` sum ancestors rather than taking max in output groups (kallewoof)
+- #13876 `8eb9870` Catch `filesystem_error` and raise `InitError` (MarcoFalke)
+- #13808 `13d51a2` shuffle coins before grouping, where warranted (kallewoof)
+- #13666 `2115cba` Always create signatures with Low R values (achow101)
+- #13917 `0333914` Additional safety checks in PSBT signer (sipa)
+- #13968 `65e7a8b` couple of walletcreatefundedpsbt fixes (instagibbs)
+- #14055 `2307a6e` fix walletcreatefundedpsbt deriv paths, add test (instagibbs)
+- #14441 `5150acc` Restore ability to list incoming transactions by label (jnewbery)
+- #13546 `91fa15a` Fix use of uninitialized value `bnb_used` in CWallet::CreateTransaction(…) (practicalswift)
+- #14310 `bb90695` Ensure wallet is unlocked before signing (gustavonalle)
+- #14690 `5782fdc` Throw error if CPubKey is invalid during PSBT keypath serialization (instagibbs)
+- #14852 `2528443` backport: [tests] Add `wallet_balance.py` (MarcoFalke)
+- #14196 `3362a95` psbt: always drop the unnecessary utxo and convert non-witness utxo to witness when necessary (achow101)
+- #14588 `70ee1f8` Refactor PSBT signing logic to enforce invariant and fix signing bug (gwillen)
+- #14424 `89a9a9d` Stop requiring imported pubkey to sign non-PKH schemes (sipa, MeshCollider)
+
+### RPC and other APIs
+- #12336 `3843780` Remove deprecated rpc options (jnewbery)
+- #12193 `5dc00f6` Consistently use UniValue.pushKV instead of push_back(Pair()) (karel-3d) (MarcoFalke)
+- #12409 `0cc45ed` Reject deprecated reserveChangeKey in fundrawtransaction (MarcoFalke)
+- #10583 `8a98dfe` Split part of validateaddress into getaddressinfo (achow101)
+- #10579 `ffc6e48` Split signrawtransaction into wallet and non-wallet RPC command (achow101)
+- #12494 `e4ffcac` Declare CMutableTransaction a struct in rawtransaction.h (Empact)
+- #12503 `0e26591` createmultisig no longer takes addresses (instagibbs)
+- #12083 `228b086` Improve getchaintxstats test coverage (promag)
+- #12479 `cd5e438` Add child transactions to getrawmempool verbose output (conscott)
+- #11872 `702e8b7` createrawtransaction: Accept sorted outputs (MarcoFalke)
+- #12700 `ebdf84c` Document RPC method aliasing (ryanofsky)
+- #12727 `8ee5c7b` Remove unreachable help conditions in rpcwallet.cpp (lutangar)
+- #12778 `b648974` Add username and ip logging for RPC method requests (GabrielDav)
+- #12717 `ac898b6` rest: Handle utxo retrieval when ignoring the mempool (romanz)
+- #12787 `cd99e5b` Adjust ifdef to avoid unreachable code (practicalswift)
+- #11742 `18815b4` Add testmempoolaccept (MarcoFalke)
+- #12942 `fefb817` Drop redundant testing of signrawtransaction prevtxs args (Empact)
+- #11200 `5f2a399` Allow for aborting rescans in the GUI (achow101)
+- #12791 `3a8a4dc` Expose a transaction's weight via RPC (TheBlueMatt)
+- #12436 `6e67754` Adds a functional test to validate the transaction version number in the RPC output (251Labs)
+- #12240 `6f8b345` Introduced a new `fees` structure that aggregates all sub-field fee types denominated in BTC (mryandao)
+- #12321 `eac067a` p2wsh and p2sh-p2wsh address in decodescript (fivepiece)
+- #13090 `17266a1` Remove Safe mode (achow101, laanwj)
+- #12639 `7eb7076` Reduce `cs_main` lock in listunspent (promag)
+- #10267 `7b966d9` New -includeconf argument for including external configuration files (kallewoof)
+- #10757 `b9551d3` Introduce getblockstats to plot things (jtimon)
+- #13288 `a589f53` Remove the need to include rpc/blockchain.cpp in order to put `GetDifficulty` under test (Empact)
+- #13394 `e1f8dce` cli: Ignore libevent warnings (theuni)
+- #13439 `3f398d7` Avoid "duplicate" return value for invalid submitblock (TheBlueMatt)
+- #13570 `a247594` Add new "getzmqnotifications" method (domob1812)
+- #13072 `b25a4c2` Update createmultisig RPC to support segwit (ajtowns)
+- #12196 `8fceae0` Add scantxoutset RPC method (jonasschnelli)
+- #13557 `b654723` BIP 174 PSBT Serializations and RPCs (achow101)
+- #13697 `f030410` Support output descriptors in scantxoutset (sipa)
+- #13927 `bced8ea` Use pushKV in some new PSBT RPCs (domob1812)
+- #13918 `a9c56b6` Replace median fee rate with feerate percentiles in getblockstats (marcinja)
+- #13721 `9f23c16` Bugfixes for BIP 174 combining and deserialization (achow101)
+- #13960 `517010e` Fix PSBT deserialization of 0-input transactions (achow101)
+- #14417 `fb9ad04` Fix listreceivedbyaddress not taking address as a string (etscrivner)
+- #14596 `de5e48a` Bugfix: RPC: Add `address_type` named param for createmultisig (luke-jr)
+- #14618 `9666dba` Make HTTP RPC debug logging more informative (practicalswift)
+- #14197 `7bee414` [psbt] Convert non-witness UTXOs to witness if witness sig created (achow101)
+- #14377 `a3fe125` Check that a separator is found for psbt inputs, outputs, and global map (achow101)
+- #14356 `7a590d8` Fix converttopsbt permitsigdata arg, add basic test (instagibbs)
+- #14453 `75b5d8c` Fix wallet unload during walletpassphrase timeout (promag)
+
+### GUI
+- #12416 `c997f88` Fix Windows build errors introduced in #10498 (practicalswift)
+- #11733 `e782099` Remove redundant locks (practicalswift)
+- #12426 `bfa3911` Initialize members in WalletModel (MarcoFalke)
+- #12489 `e117cfe` Bugfix: respect user defined configuration file (-conf) in QT settings (jonasschnelli)
+- #12421 `be263fa` navigate to  transaction history page after send (Sjors)
+- #12580 `ce56fdd` Show a transaction's virtual size in its details dialog (dooglus)
+- #12501 `c8ea91a` Improved "custom fee" explanation in tooltip (randolf)
+- #12616 `cff95a6` Set modal overlay hide button as default (promag)
+- #12620 `8a43bdc` Remove TransactionTableModel::TxIDRole (promag)
+- #12080 `56cc022` Add support to search the address book (promag)
+- #12621 `2bac3e4` Avoid querying unnecessary model data when filtering transactions (promag)
+- #12721 `e476826` remove "new" button during receive-mode in addressbook (jonasschnelli)
+- #12723 `310dc61` Qt5: Warning users about invalid-BIP21 URI bitcoin:// (krab)
+- #12610 `25cf18f` Multiwallet for the GUI (jonasschnelli)
+- #12779 `f4353da` Remove unused method setupAmountWidget(…) (practicalswift)
+- #12795 `68484d6` do not truncate .dat extension for wallets in gui (instagibbs)
+- #12870 `1d54004` make clean removes `src/qt/moc_` files (Sjors)
+- #13055 `bdda14d` Don't log to console by default (laanwj)
+- #13141 `57c57df` fixes broken link on readme (marcoagner)
+- #12928 `ef006d9` Initialize non-static class members that were previously neither initialized where defined nor in constructor (practicalswift)
+- #13158 `81c533c` Improve sendcoinsdialog readability (marcoagner)
+- #11491 `40c34a0` Add proxy icon in statusbar (mess110)
+- #13264 `2a7c53b` Satoshi unit (GreatSock)
+- #13097 `e545503` Support wallets loaded dynamically (promag)
+- #13284 `f8be434` fix visual "overflow" of amount input (brandonrninefive)
+- #13275 `a315b79` use `[default wallet]` as name for wallet with no name (jonasschnelli)
+- #13273 `3fd0c23` Qt/Bugfix: fix handling default wallet with no name (jonasschnelli)
+- #13341 `25d2df2` Stop translating command line options (laanwj)
+- #13043 `6e249e4` OptionsDialog: add prune setting (Sjors)
+- #13506 `6579d80` load wallet in UI after possible init aborts (jonasschnelli)
+- #13458 `dc53f7f` Drop qt4 support (laanwj)
+- #13528 `b877c39` Move BitcoinGUI initializers to class, fix initializer order warning (laanwj)
+- #13536 `baf3a3a` coincontrol: Remove unused qt4 workaround (MarcoFalke)
+- #13537 `10ffca7` Peer table: Visualize inbound/outbound state for every row (wodry)
+- #13791 `2c14c1f` Reject dialogs if key escape is pressed (promag)
+- #14403 `0242b5a` Revert "Force TLS1.0+ for SSL connections" (real-or-random)
+- #14593 `df5131b` Explicitly disable "Dark Mode" appearance on macOS (fanquake)
+
+### Build system
+- #12371 `c9ca4f6` Add gitian PGP key: akx20000 (ghost)
+- #11966 `f4f4f51` clientversion: Use full commit hash for commit-based version descriptions (luke-jr)
+- #12417 `ae0fbf0` Upgrade `mac_alias` to 2.0.7 (droark)
+- #12444 `1f055ef` gitian: Bump descriptors for (0.)17 (theuni)
+- #12402 `59e032b` expat 2.2.5, ccache 3.4.1, miniupnpc 2.0.20180203 (fanquake)
+- #12029 `daa84b3` Add a makefile target for Doxygen documentation (Ov3rlo4d)
+- #12466 `6645eaf` Only use `D_DARWIN_C_SOURCE` when building miniupnpc on darwin (fanquake)
+- #11986 `765a3eb` zeromq 4.2.3 (fanquake)
+- #12373 `f13d756` Add build support for profiling (murrayn)
+- #12631 `a312e20` gitian: Alphabetize signing keys & add kallewoof key (kallewoof)
+- #12607 `29fad97` Remove ccache (fanquake)
+- #12625 `c4219ff` biplist 1.0.3 (fanquake)
+- #12666 `05042d3` configure: UniValue 1.0.4 is required for pushKV(, bool) (luke-jr)
+- #12678 `6324c68` Fix a few compilation issues with Clang 7 and -Werror (vasild)
+- #12692 `de6bdfd` Add configure options for various -fsanitize flags (eklitzke)
+- #12901 `7e23972` Show enabled sanitizers in configure output (practicalswift)
+- #12899 `3076993` macOS: Prevent Xcode 9.3 build warnings (AkioNak)
+- #12715 `8fd6243` Add 'make clean' rule (hkjn)
+- #13133 `a024a18` Remove python2 from configure.ac (ken2812221)
+- #13005 `cb088b1` Make --enable-debug to pick better options (practicalswift)
+- #13254 `092b366` Remove improper `qt/moc_*` cleaning glob from the general Makefile (Empact)
+- #13306 `f5a7733` split warnings out of CXXFLAGS (theuni)
+- #13385 `7c7508c` Guard against accidental introduction of new Boost dependencies (practicalswift)
+- #13041 `5779dc4` Add linter checking for accidental introduction of locale dependence (practicalswift)
+- #13408 `70a03c6` crypto: cleanup sha256 build (theuni)
+- #13435 `cf7ca60` When build fails due to lib missing, indicate which one (Empact)
+- #13445 `8eb76f3` Reset default -g -O2 flags when enable debug (ken2812221)
+- #13465 `81069a7` Avoid concurrency issue when make multiple target (ken2812221)
+- #13454 `45c00f8` Make sure `LC_ALL=C` is set in all shell scripts (practicalswift)
+- #13480 `31145a3` Avoid copies in range-for loops and add a warning to detect them (theuni)
+- #13486 `66e1a08` Move rpc/util.cpp from libbitcoin-util to libbitcoin-server (ken2812221)
+- #13580 `40334c7` Detect if char equals `int8_t` (ken2812221)
+- #12788 `287e4ed` Tune wildcards for LIBSECP256K1 target (kallewoof)
+- #13611 `b55f0c3` bugfix: Use `__cpuid_count` for gnu C to avoid gitian build fail (ken2812221)
+- #12971 `a6d14b1` Upgrade Qt to 5.9.6 (TheCharlatan)
+- #13543 `6c6a300` Add RISC-V support (laanwj)
+- #13177 `dcb154e` GCC-7 and glibc-2.27 back compat code (ken2812221)
+- #13659 `90b1c7e` add missing leveldb defines (theuni)
+- #13368 `c0f1569` Update gitian-build.sh for docker (achow101)
+- #13171 `19d8ca5` Change gitian-descriptors to use bionic instead (ken2812221)
+- #13604 `75bea05` Add depends 32-bit arm support for bitcoin-qt (TheCharlatan)
+- #13623 `9cdb19f` Migrate gitian-build.sh to python (ken2812221)
+- #13689 `8c36432` disable Werror when building zmq (greenaddress)
+- #13617 `cf7f9ae` release: Require macos 10.10+ (fanquake)
+- #13750 `c883653` use MacOS friendly sed syntax in qt.mk (Sjors)
+- #13095 `415f2bf` update `ax_boost_chrono`/`unit_test_framework` (fanquake)
+- #13732 `e8ffec6` Fix Qt's rcc determinism (Fuzzbawls)
+- #13782 `8284f1d` Fix osslsigncode compile issue in gitian-build (ken2812221)
+- #13696 `2ab7208` Add aarch64 qt depends support for cross compiling bitcoin-qt (TheCharlatan)
+- #13705 `b413ba0` Add format string linter (practicalswift)
+- #14000 `48c8459` fix qt determinism (theuni)
+- #14018 `3e4829a` Bugfix: NSIS: Exclude `Makefile*` from docs (luke-jr)
+- #12906 `048ac83` Avoid `interface` keyword to fix windows gitian build (ryanofsky)
+- #13314 `a9b6957` Fix FreeBSD build by including utilstrencodings.h (laanwj)
+- #14416 `eb2cc84` Fix OSX dmg issue (10.12 to 10.14) (jonasschnelli)
+- #14647 `7edebed` Remove illegal spacing in darwin.mk (ch4ot1c)
+- #14698 `ec71f06` Add bitcoin-tx.exe into Windows installer (ken2812221)
 
 ### Tests and QA
-- #9744 `8efd1c8` Remove unused module from rpc-tests (34ro)
-- #9657 `7ff4a53` Improve rpc-tests.py (jnewbery)
-- #9766 `7146d96` Add --exclude option to rpc-tests.py (jnewbery)
-- #9577 `d6064a8` Fix docstrings in qa tests (jnewbery)
-- #9823 `a13a417` qa: Set correct path for binaries in rpc tests (MarcoFalke)
-- #9847 `6206252` Extra test vector for BIP32 (sipa)
-- #9350 `88c2ae3` [Trivial] Adding label for amount inside of tx_valid/tx_invalid.json (Christewart)
-- #9888 `36afd4d` travis: Verify commits only for one target (MarcoFalke)
-- #9904 `58861ad` test: Fail if InitBlockIndex fails (laanwj)
-- #9828 `67c5cc1` Avoid -Wshadow warnings in wallet_tests (ryanofsky)
-- #9832 `48c3429` [qa] assert_start_raises_init_error (NicolasDorier)
-- #9739 `9d5fcbf` Fix BIP68 activation test (jnewbery)
-- #9547 `d32581c` bench: Assert that division by zero is unreachable (practicalswift)
-- #9843 `c78adbf` Fix segwit getblocktemplate test (jnewbery)
-- #9929 `d5ce14e` tests: Delete unused function _rpchost_to_args (laanwj)
-- #9555 `19be26a` [test] Avoid reading a potentially uninitialized variable in tx_invalid-test (transaction_tests.cpp) (practicalswift)
-- #9945 `ac23a7c` Improve logging in bctest.py if there is a formatting mismatch (jnewbery)
-- #9768 `8910b47` [qa] Add logging to test_framework.py (jnewbery)
-- #9972 `21833f9` Fix extended rpc tests broken by #9768 (jnewbery)
-- #9977 `857d1e1` QA: getblocktemplate_longpoll.py should always use >0 fee tx (sdaftuar)
-- #9970 `3cc13ea` Improve readability of segwit.py, smartfees.py (sdaftuar)
-- #9497 `2c781fb` CCheckQueue Unit Tests (JeremyRubin)
-- #10024 `9225de2` [trivial] Use log.info() instead of print() in remaining functional test cases (jnewbery)
-- #9956 `3192e52` Reorganise qa directory (jnewbery)
-- #10017 `02d64bd` combine_logs.py - aggregates log files from multiple bitcoinds during functional tests (jnewbery)
-- #10047 `dfef6b6` [tests] Remove unused variables and imports (practicalswift)
-- #9701 `a230b05` Make bumpfee tests less fragile (ryanofsky)
-- #10053 `ca20923` [test] Allow functional test cases to be skipped (jnewbery)
-- #10052 `a0b1e57` [test] Run extended tests once daily in Travis (jnewbery)
-- #10069 `1118493` [QA] Fix typo in fundrawtransaction test (NicolasDorier)
-- #10083 `c044f03` [QA] Renaming rawTx into rawtx (NicolasDorier)
-- #10073 `b1a4f27` Actually run assumevalid.py (jnewbery)
-- #9780 `c412fd8` Suppress noisy output from qa tests in Travis (jnewbery)
-- #10096 `79af9fb` Check that all test scripts in test/functional are being run (jnewbery)
-- #10076 `5b029aa` [qa] combine_logs: Use ordered list for logfiles (MarcoFalke)
-- #10107 `f2734c2` Remove unused variable. Remove accidental trailing semicolons in Python code (practicalswift)
-- #10109 `8ac8041` Remove SingleNodeConnCB (jnewbery)
-- #10114 `edc62c9` [tests] sync_with_ping should assert that ping hasn't timed out (jnewbery)
-- #10128 `427d2fd` Speed Up CuckooCache tests (JeremyRubin)
-- #10072 `12af74b` Remove sources of unreliablility in extended functional tests (jnewbery)
-- #10077 `ebfd653` [qa] Add setnetworkactive smoke test (MarcoFalke)
-- #10152 `080d7c7` [trivial] remove unused line in Travis config (jnewbery)
-- #10159 `df1ca9e` [tests] color test results and sort alphabetically (jnewbery)
-- #10124 `88799ea` [test] Suppress test logging spam (jnewbery)
-- #10142 `ed09dd3` Run bitcoin_test-qt under minimal QPA platform (ryanofsky)
-- #9949 `a27dbc5` [bench] Avoid function call arguments which are pointers to uninitialized values (practicalswift)
-- #10187 `b44adf9` tests: Fix test_runner return value in case of skipped test (laanwj)
-- #10197 `d86bb07` [tests] Functional test warnings (jnewbery)
-- #10219 `9111df9` Tests: Order Python Tests Differently (jimmysong)
-- #10229 `f3db4c6` Tests: Add test for getdifficulty (jimmysong)
-- #10224 `2723bcd` [test] Add test for getaddednodeinfo (jimmysong)
-- #10023 `c530c15` [tests] remove maxblocksinflight.py (functionality covered by other test) (jnewbery)
-- #10097 `1b25b6d` Move zmq test skipping logic into individual test case (jnewbery)
-- #10272 `54e2d87` [Tests] Prevent warning: variable 'x' is uninitialized (paveljanik)
-- #10225 `e0a7e19` [test] Add aborttrescan tests (kallewoof)
-- #10278 `8254a8a` [test] Add Unit Test for GetListenPort (jimmysong)
-- #10280 `47535d7` [test] Unit test amount.h/amount.cpp (jimmysong)
-- #10256 `80c3a73` [test] Add test for gettxout to wallet.py (jimmysong)
-- #10264 `492d22f` [test] Add tests for getconnectioncount, getnettotals and ping (jimmysong)
-- #10169 `8f3e384` [tests] Remove func test code duplication (jnewbery)
-- #10198 `dc8fc0c` [tests] Remove is_network_split from functional test framework (jnewbery)
-- #10255 `3c5e6c9` [test] Add test for listaddressgroupings (jimmysong)
-- #10137 `75171f0` Remove unused import. Remove accidental trailing semicolons (practicalswift)
-- #10307 `83073de` [tests] allow zmq test to be run in out-of-tree builds (jnewbery)
-- #10344 `e927483` [tests] Fix abandonconflict.py intermittency (jnewbery)
-- #10318 `170bc2c` [tests] fix wait_for_inv() (jnewbery)
-- #10171 `fff72de` [tests] Add node methods to test framework (jnewbery)
-- #10352 `23d78c4` test: Add elapsed time to RPC tracing (laanwj)
-- #10342 `6a796b2` [tests] Improve mempool_persist test (jnewbery)
-- #10287 `776ba23` [tests] Update Unit Test for addrman.h/addrman.cpp (jimmysong)
-- #10365 `7ee5236` [tests] increase timeouts in sendheaders test (jnewbery)
-- #10361 `f6241b3` qa: disablewallet: Check that wallet is really disabled (MarcoFalke)
-- #10371 `4b766fc` [tests] Clean up addrman_tests.cpp (jimmysong)
-- #10253 `87abe20` [test] Add test for getnetworkhashps (jimmysong)
-- #10376 `8bd16ee` [tests] fix disconnect_ban intermittency (jnewbery)
-- #10374 `5411997` qa: Warn when specified test is not found (MarcoFalke)
-- #10405 `0542978` tests: Correct testcase in script_tests.json for large number OP_EQUAL (laanwj)
-- #10429 `6b99daf` tests: fix spurious addrman test failure (theuni)
-- #10433 `8e57256` [tests] improve tmpdir structure (jnewbery)
-- #10415 `217b416` [tests] Speed up fuzzing by ~200x when using afl-fuzz (practicalswift)
-- #10445 `b4b057a` Add test for empty chain and reorg consistency for gettxoutsetinfo (gmaxwell)
-- #10423 `1aefc94` [tests] skipped tests should clean up after themselves (jnewbery)
-- #10359 `329fc1d` [tests] functional tests should call BitcoinTestFramework start/stop node methods (jnewbery)
-- #10514 `e103b3f` Bugfix: missing == 0 after randrange (sipa)
-- #10515 `c871f32` [test] Add test for getchaintxstats (jimmysong)
-- #10509 `bea5b00` Remove xvfb configuration from travis (ryanofsky)
-- #10535 `30853e1` [qa] fundrawtx: Fix shutdown race (MarcoFalke)
-- #9909 `300f8e7` tests: Add FindEarliestAtLeast test for edge cases (ryanofsky)
-- #10331 `75e898c` Share config between util and functional tests (jnewbery)
-- #10321 `e801084` Use FastRandomContext for all tests (sipa)
-- #10524 `6c2d81f` [tests] Remove printf(...) (practicalswift)
-- #10547 `71ab6e5` [tests] Use FastRandomContext instead of boost::random::{mt19937,uniform_int_distribution} (practicalswift)
-- #10551 `6702617` [Tests] Wallet encryption functional tests (achow101)
-- #10555 `643fa0b` [tests] various improvements to zmq_test.py (jnewbery)
-- #10533 `d083bd9` [tests] Use cookie auth instead of rpcuser and rpcpassword (achow101)
-- #10632 `c68a9a6` qa: Add stopatheight test (MarcoFalke)
-- #10636 `4bc853b` [qa] util: Check return code after closing bitcoind proc (MarcoFalke)
-- #10662 `e0a7801` Initialize randomness in benchmarks (achow101)
-- #10612 `7c87a9c` The young person's guide to the test_framework (jnewbery)
-- #10659 `acb1153` [qa] blockchain: Pass on closed connection during generate call (MarcoFalke)
-- #10690 `416af3e` [qa] Bugfix: allow overriding extra_args in ComparisonTestFramework (sdaftuar)
-- #10556 `65cc7aa` Move stop/start functions from utils.py into BitcoinTestFramework (jnewbery)
-- #10704 `dd07f47` [tests] nits in dbcrash.py (jnewbery)
-- #10743 `be82498` [test] don't run dbcrash.py on Travis (jnewbery)
-- #10761 `d3b5870` [tests] fix replace_by_fee.py (jnewbery)
-- #10759 `1d4805c` Fix multi_rpc test for hosts that dont default to utf8 (TheBlueMatt)
-- #10190 `e4f226a` [tests] mining functional tests (including regression test for submitblock) (jnewbery)
-- #10739 `1fc783f` test: Move variable `state` down where it is used (paveljanik)
-- #9980 `fee0d80` Fix mem access violation merkleblock (Christewart)
-- #10893 `0c173a1` [QA] Avoid running multiwallet.py twice (jonasschnelli)
-- #10927 `9d5e8f9` test: Make sure wallet.backup is created in temp path (laanwj)
-- #10899 `f29d5db` [test] Qt: Use _putenv_s instead of setenv on Windows builds (brianmcmichael)
-- #10912 `5c8eb79` [tests] Fix incorrect memory_cleanse(…) call in crypto_tests.cpp (practicalswift)
-- #11001 `fa8a063` [tests] Test disconnecting unsupported service bits logic (jnewbery)
-- #10695 `929fd72` [qa] Rewrite BIP65/BIP66 functional tests (sdaftuar)
-- #10963 `ecd2135` [bench] Restore format state of cout after printing with std::fixed/setprecision (practicalswift)
-- #11025 `e5d26e4` qa: Fix inv race in example_test (MarcoFalke)
-- #10765 `2c811e0` Tests: address placement should be deterministic by default (ReneNyffenegger)
-- #11000 `ac016e1` test: Add resendwallettransactions functional tests (promag)
-- #11032 `aeb3175` [qa] Fix block message processing error in sendheaders.py (sdaftuar)
-- #10105 `0b9fb68` [tests] fixup - make all Travis test runs quiet, non just cron job runs (jnewbery)
-- #10222 `6ce7337` [tests] test_runner - check unicode (jnewbery)
-- #10327 `35da2ae` [tests] remove import-abort-rescan.py (jnewbery)
-- #11023 `bf74d37` [tests] Add option to attach a python debugger if functional test fails (jnewbery)
-- #10565 `8c2098a` [coverage] Remove subtrees and benchmarks from coverage report (achow101)
+- #12252 `8d57319` Require all tests to follow naming convention (ajtowns)
+- #12295 `935eb8d` Enable flake8 warnings for all currently non-violated rules (practicalswift)
+- #11858 `b4d8549` Prepare tests for Windows (MarcoFalke)
+- #11771 `2dbc4a4` Change invalidtxrequest to use BitcoinTestFramework (jnewbery)
+- #12200 `d09968f` Bind functional test nodes to 127.0.0.1 (Sjors)
+- #12425 `26dc2da` Add some script tests (richardkiss)
+- #12455 `23481fa` Fix bip68 sequence test to reflect updated rpc error message (Empact)
+- #12477 `acd1e61` Plug memory leaks and stack-use-after-scope (MarcoFalke)
+- #12443 `07090c5` Move common args to bitcoin.conf (MarcoFalke)
+- #12570 `39dcac2` Add test cases for HexStr (`std::reverse_iterator` and corner cases) (kostaz)
+- #12582 `6012f1c` Fix ListCoins test failure due to unset `g_wallet_allow_fallback_fee` (ryanofsky)
+- #12516 `7f99964` Avoid unintentional unsigned integer wraparounds in tests (practicalswift)
+- #12512 `955fd23` Don't test against the mempool min fee information in mempool_limit.py (Empact)
+- #12600 `29088b1` Add a test for large tx output scripts with segwit input (richardkiss)
+- #12627 `791c3ea` Fix some tests to work on native windows (MarcoFalke)
+- #12405 `0f58d7f` travis: Full clone for git subtree check (MarcoFalke)
+- #11772 `0630974` Change invalidblockrequest to use BitcoinTestFramework (jnewbery)
+- #12681 `1846296` Fix ComputeTimeSmart test failure with `-DDEBUG_LOCKORDER` (ryanofsky)
+- #12682 `9f04c8e` travis: Clone depth 1 unless `$check_doc` (MarcoFalke)
+- #12710 `00d1680` Append scripts to new `test_list` array to fix bad assignment (jeffrade)
+- #12720 `872c921` Avoiding 'file' function name from python2 (jeffrade)
+- #12728 `4ba3d4f` rename TestNode to TestP2PConn in tests (jnewbery)
+- #12746 `2405ce1` Remove unused argument `max_invalid` from `check_estimates(…)` (practicalswift)
+- #12718 `185d484` Require exact match in `assert_start_raises_init_eror` (jnewbery, MarcoFalke)
+- #12076 `6d36f59` Use node.datadir instead of tmpdir in test framework (MarcoFalke)
+- #12772 `b43aba8` ci: Bump travis timeout for make check to 50m (jnewbery)
+- #12806 `18606eb` Fix function names in `feature_blocksdir` (MarcoFalke)
+- #12811 `0d8fc8d` Make summary row bold-red if any test failed and show failed tests at end of table (laanwj)
+- #12790 `490644d` Use blockmaxweight where tests previously had blockmaxsize (conscott)
+- #11773 `f0f9732` Change `feature_block.py` to use BitcoinTestFramework (jnewbery)
+- #12839 `40f4baf` Remove travis checkout depth (laanwj)
+- #11817 `2a09a78` Change `feature_csv_activation.py` to use BitcoinTestFramework (jnewbery)
+- #12284 `fa5825d` Remove assigned but never used local variables. Enable Travis checking for unused local variables (practicalswift)
+- #12719 `9beded5` Add note about test suite naming convention in developer-notes.md (practicalswift)
+- #12861 `c564424` Stop `feature_block.py` from blowing up memory (jnewbery)
+- #12851 `648252e` travis: Run verify-commits only on cron jobs (MarcoFalke)
+- #12853 `2106c4c` Match full plain text by default (MarcoFalke)
+- #11818 `9a2db3b` I accidentally (deliberately) killed it (the ComparisonTestFramework) (jnewbery)
+- #12766 `69310a3` Tidy up REST interface functional tests (romanz)
+- #12849 `83c7533` Add logging in loops in `p2p_sendhears.py` (ccdle12)
+- #12895 `d6f10b2` Add note about test suite name uniqueness requirement to developer notes (practicalswift)
+- #12856 `27278df` Add Metaclass for BitcoinTestFramework (WillAyd)
+- #12918 `6fc5a05` Assert on correct variable (kallewoof)
+- #11878 `a04440f` Add Travis check for duplicate includes (practicalswift)
+- #12917 `cf8073f` Windows fixups for functional tests (MarcoFalke)
+- #12926 `dd1ca9e` Run unit tests in parallel (sipa)
+- #12920 `b1fdfc1` Fix sign for expected values (kallewoof)
+- #12947 `979f598` Wallet hd functional test speedup and clarification (instagibbs)
+- #12993 `0d69921` Remove compatibility code not needed now when we're on Python 3 (practicalswift)
+- #12996 `6a278e0` Remove redundant bytes(…) calls (practicalswift)
+- #12949 `6b46288` Avoid copies of CTransaction (MarcoFalke)
+- #13007 `0d12570` Fix dangling wallet pointer in vpwallets (promag)
+- #13048 `cac6d11` Fix `feature_block` flakiness (jnewbery)
+- #12510 `d5b2e98` Add `rpc_bind` test to default-run tests (laanwj)
+- #13022 `896a9d0` Attach node index to `test_node` AssertionError and print messages (jamesob)
+- #13024 `018c7e5` Add rpcauth pair that generated by rpcauth.py (ken2812221)
+- #13013 `a0079d4` bench: Amend `mempool_eviction` test for witness txs (MarcoFalke)
+- #13051 `e074097` Normalize executable location (MarcoFalke)
+- #13056 `106d929` Make rpcauth.py testable and add unit tests (nixbox)
+- #13073 `a785bc3` add rpcauth-test to `AC_CONFIG_LINKS` to fix out-of-tree make check (laanwj)
+- #12830 `25ad2f7` Clarify address book error messages, add tests (jamesob)
+- #13082 `24106a8` don't test against min relay fee information in `mining_prioritisetransaction.py` (kristapsk)
+- #13003 `8d045a0` Add test for orphan handling (MarcoFalke)
+- #13105 `9e9b48d` Add --failfast option to functional test runner (jamesob)
+- #13130 `3186ad4` Fix race in `rpc_deprecated.py` (jnewbery)
+- #13136 `baf6b4e` Fix flake8 warnings in several wallet functional tests (jnewbery)
+- #13094 `bf9b03d` Add test for 64-bit Windows PE, modify 32-bit test results (ken2812221)
+- #13183 `9458b05` travis: New travis job for `check_docs` steps (glaksmono)
+- #12265 `1834d4d` fundrawtransaction: lock watch-only shared address (kallewoof)
+- #13188 `4a50ec0` Remove unused option --srcdir (MarcoFalke)
+- #12755 `612ba35` Better stderr testing (jnewbery)
+- #13198 `196c5a9` Avoid printing to console during cache creation (sdaftuar)
+- #13075 `cb9bbf7` Remove 'account' API from wallet functional tests (jnewbery)
+- #13221 `ffa86af` travis: Rename the build stage `check_doc` to `lint` (practicalswift)
+- #13205 `3cbd25f` Remove spurious error log in `p2p_segwit.py` (jnewbery)
+- #13291 `536120e` Don't include torcontrol.cpp into the test file (Empact)
+- #13281 `2ac6315` Move linters to test/lint, add readme (MarcoFalke)
+- #13215 `f8a29ca` travis: Build tests on ubuntu 18.04 with docker (ken2812221)
+- #13349 `24f7011` bench: Don't return a bool from main (laanwj)
+- #13347 `87a9d03` travis: Skip cache for lint stage (MarcoFalke)
+- #13355 `0b1c0c4` Fix "gmake check" under OpenBSD 6.3 (probably `*BSD`): Avoid using GNU grep specific regexp handling (practicalswift)
+- #13353 `d4f6dac` Fixup setting of PATH env var (MarcoFalke)
+- #13352 `e24bf1c` Avoid checking reject code for now (MarcoFalke)
+- #13383 `2722a1f` bench: Use non-throwing parsedouble(…) instead of throwing boost::lexical_cast<double>(…) (practicalswift)
+- #13367 `264efdc` Increase includeconf test coverage (MarcoFalke)
+- #13404 `3d3d8ae` speed up of `tx_validationcache_tests` by reusing of CTransaction (lucash-dev)
+- #13421 `531a033` Remove `portseed_offset` from test runner (MarcoFalke)
+- #13440 `5315660` Log as utf-8 (MarcoFalke)
+- #13066 `fa4b906` Migrate verify-commits script to python, run in travis (ken2812221)
+- #13447 `4b1edd3` travis: Increase `travis_wait` time while verifying commits (ken2812221)
+- #13350 `f532d52` Add logging to provide anchor points when debugging p2p_sendheaders (lmanners)
+- #13406 `4382f19` travis: Change mac goal to all deploy (ken2812221)
+- #13457 `b222138` Drop variadic macro (MarcoFalke)
+- #13512 `3a45493` mininode: Expose connection state through `is_connected` (MarcoFalke)
+- #13496 `9ab4c2a` Harden lint-filenames.sh (wodry)
+- #13219 `08516e0` bench: Add block assemble benchmark (MarcoFalke)
+- #13530 `b1dc39d` bench: Add missing pow.h header (laanwj)
+- #12686 `2643fa5` Add -ftrapv to CFLAGS and CXXFLAGS when --enable-debug is used. Enable -ftrapv in Travis (practicalswift)
+- #12882 `d96bdd7` Make `test_bitcoin` pass under ThreadSanitzer (clang). Fix lock-order-inversion (potential deadlock) (practicalswift)
+- #13535 `2328039` `wallet_basic`: Specify minimum required amount for listunspent (MarcoFalke)
+- #13551 `c93c360` Fix incorrect documentation for test case `cuckoocache_hit_rate_ok` (practicalswift)
+- #13563 `b330f3f` bench: Simplify coinselection (promag)
+- #13517 `a6ed99a` Remove need to handle the network thread in tests (MarcoFalke)
+- #13522 `686e97a` Fix `p2p_sendheaders` race (jnewbery)
+- #13467 `3dc2dcf` Make `p2p_segwit` easier to debug (jnewbery)
+- #13598 `0212187` bench: Fix incorrect behaviour in prevector.cpp (AkioNak)
+- #13565 `b05ded1` Fix AreInputsStandard test to reference the proper scriptPubKey (Empact)
+- #13145 `d3dae3d` Use common getPath method to create temp directory in tests (winder)
+- #13645 `2ea7eb6` skip `rpc_zmq` functional test as necessary (jamesob)
+- #13626 `8f1106d` Fix some TODOs in `p2p_segwit` (MarcoFalke)
+- #13138 `8803c91` Remove accounts from `wallet_importprunedfunds.py` (jnewbery)
+- #13663 `cbc9b50` Avoid read/write to default datadir (MarcoFalke)
+- #13682 `f8a32a3` bench: Remove unused variable (practicalswift)
+- #13638 `6fcdb5e` Use `MAX_SCRIPT_ELEMENT_SIZE` from script.py (domob1812)
+- #13687 `9d26b69` travis: Check that ~/.bitcoin is never created (MarcoFalke)
+- #13715 `e1260a7` fixes mininode's P2PConnection sending messages on closing transport (marcoagner)
+- #13729 `aa9429a` travis: Avoid unnecessarily setting env variables on the lint build (Empact)
+- #13747 `ab28b5b` Skip P2PConnection's `is_closing()` check when not available (domob1812)
+- #13650 `7a9bca6` travis: Don't store debug info if --enable-debug is set (ken2812221)
+- #13711 `f98d1e0` bench: Add benchmark for unserialize prevector (AkioNak)
+- #13771 `365384f` travis: Retry to fetch docker image (MarcoFalke)
+- #13806 `4d550ff` Fix `bench/block_assemble` assert failure (jamesob)
+- #13779 `d25079a` travis: Improve readability of travis.yml and log outputs (scravy)
+- #13822 `0fb9c87` bench: Make coinselection output groups pass eligibility filter (achow101)
+- #13247 `e83d82a` Add tests to SingleThreadedSchedulerClient() and document the memory model (skeees)
+- #13811 `660abc1` travis: Run `bench_bitcoin` once (MarcoFalke)
+- #13837 `990e182` Extract `rpc_timewait` as test param (MarcoFalke)
+- #13851 `9c4324d` fix locale for lint-shell (scravy)
+- #13823 `489b51b` quote path in authproxy for external multiwallets (MarcoFalke)
+- #13849 `2b67354` travis: Use only travis jobs: instead of mix of jobs+matrix (scravy)
+- #13859 `2384323` Add emojis to `test_runner` path and wallet filename (MarcoFalke)
+- #13916 `8ac7125` `wait_for_verack` by default (MarcoFalke)
+- #13669 `f66e1c7` Cleanup `create_transaction` implementations (conscott)
+- #13924 `09ada21` Simplify comparison in `rpc_blockchain.py` (domob1812)
+- #13913 `a08533c` Remove redundant checkmempool/checkblockindex `extra_args` (MarcoFalke)
+- #13915 `a04888a` Add test for max number of entries in locator (MarcoFalke)
+- #13867 `1b04b55` Make extended tests pass on native Windows (MarcoFalke)
+- #13944 `0df7a6c` Port usage of deprecated optparse module to argparse module (Kvaciral)
+- #13928 `b8eb0df` blocktools enforce named args for amount (MarcoFalke)
+- #13054 `bffb35f` Enable automatic detection of undefined names in Python tests scripts. Remove wildcard imports (practicalswift)
+- #14069 `cf3d7f9` Use assert not `BOOST_CHECK_*` from multithreaded tests (skeees)
+- #14071 `fab0fbe` Stop txindex thread before calling destructor (MarcoFalke)
+- #13965 `29899ec` Fix extended functional tests fail (ken2812221)
+- #14011 `9461f98` Disable wallet and address book Qt tests on macOS minimal platform (ryanofsky)
+- #14180 `86fadee` Run all tests even if wallet is not compiled (MarcoFalke)
+- #14122 `8bc1bad` Test `rpc_help.py` failed: Check whether ZMQ is enabled or not (Kvaciral)
+- #14101 `96dc936` Use named args in validation acceptance tests (MarcoFalke)
+- #14020 `24d796a` Add tests for RPC help (promag)
+- #14052 `7ff32a6` Add some actual witness in `rpc_rawtransaction` (MarcoFalke)
+- #14215 `b72fbab` Use correct python index slices in example test (sdaftuar)
+- #14024 `06544fa` Add `TestNode::assert_debug_log` (MarcoFalke)
+- #14658 `60f7a97` Add test to ensure node can generate all rpc help texts at runtime (MarcoFalke)
+- #14632 `96f15e8` Fix a comment (fridokus)
+- #14700 `f9db08e` Avoid race in `p2p_invalid_block` by waiting for the block request (MarcoFalke)
+- #14845 `67225e2` Add `wallet_balance.py` (jnewbery)
 
 ### Miscellaneous
-- #9871 `be8ba2c` Add a tree sha512 hash to merge commits (sipa)
-- #9821 `d19d45a` util: Specific GetOSRandom for Linux/FreeBSD/OpenBSD (laanwj)
-- #9903 `ba80a68` Docs: add details to -rpcclienttimeout doc (ian-kelling)
-- #9910 `53c300f` Docs: correct and elaborate -rpcbind doc (ian-kelling)
-- #9905 `01b7cda` [contrib] gh-merge: Move second sha512 check to the end (MarcoFalke)
-- #9880 `4df8213` Verify Tree-SHA512s in merge commits, enforce sigs are not SHA1 (TheBlueMatt)
-- #9932 `00c13ea` Fix verify-commits on travis and always check top commit's tree (TheBlueMatt)
-- #9952 `6996e06` Add historical release notes for 0.14.0 (laanwj)
-- #9940 `fa99663` Fix verify-commits on OSX, update for new bad Tree-SHA512, point travis to different keyservers (TheBlueMatt)
-- #9963 `8040ae6` util: Properly handle errors during log message formatting (laanwj)
-- #9984 `cce056d` devtools: Make github-merge compute SHA512 from git, instead of worktree (laanwj)
-- #9995 `8bcf934` [doc] clarify blockchain size and pruning (askmike)
-- #9734 `0c17afc` Add updating of chainTxData to release process (sipa)
-- #10063 `530fcbd` add missing spaces so that markdown recognizes headline (flack)
-- #10085 `db1ae54` Docs: remove 'noconnect' option (jlopp)
-- #10090 `8e4f7e7` Update bitcoin.conf with example for pruning (coinables)
-- #9424 `1a5aaab` Change LogAcceptCategory to use uint32_t rather than sets of strings (gmaxwell)
-- #10036 `fbf36ca` Fix init README format to render correctly on github (jlopp)
-- #10058 `a2cd0b0` No need to use OpenSSL malloc/free (tjps)
-- #10123 `471ed00` Allow debug logs to be excluded from specified component (jnewbery)
-- #10104 `fadf078` linearize script: Option to use RPC cookie (achow101)
-- #10162 `a3a2160` [trivial] Log calls to getblocktemplate (jnewbery)
-- #10155 `928695b` build: Deduplicate version numbers (laanwj)
-- #10211 `a86255b` [doc] Contributor fixes & new "finding reviewers" section (kallewoof)
-- #10250 `1428f30` Fix some empty vector references (sipa)
-- #10270 `95f5e44` Remove Clang workaround for Boost 1.46 (fanquake)
-- #10263 `cb007e4` Trivial: fix fee estimate write error log message (CryptAxe)
-- #9670 `bd9ec0e` contrib: github-merge improvements (laanwj)
-- #10260 `1d75597` [doc] Minor corrections to osx dependencies (fanquake)
-- #10189 `750c5a5` devtools/net: add a verifier for scriptable changes. Use it to make CNode::id private (theuni)
-- #10322 `bc64b5a` Use hardware timestamps in RNG seeding (sipa)
-- #10381 `7f2b9e0` Shadowing warnings are not enabled by default, update doc accordingly (paveljanik)
-- #10380 `b6ee855` [doc] Removing comments about dirty entries on txmempool (madeo)
-- #10383 `d0c37ee` [logging] log system time and mock time (jnewbery)
-- #10404 `b45a52a` doc: Add logging to FinalizeNode() (sdaftuar)
-- #10388 `526e839` Output line to debug.log when IsInitialBlockDownload latches to false (morcos)
-- #10372 `15254e9` Add perf counter data to GetStrongRandBytes state in scheduler (TheBlueMatt)
-- #10461 `55b72f3` Update style guide (sipa)
-- #10486 `10e8c0a` devtools: Retry after signing fails in github-merge (laanwj)
-- #10447 `f259263` Make bitcoind invalid argument error message specific (laanwj)
-- #10495 `6a38b79` contrib: Update location of seeds.txt (laanwj)
-- #10469 `b6b150b` Fixing typo in rpcdump.cpp help message (keystrike)
-- #10451 `27b9931` contrib/init/bitcoind.openrcconf: Don't disable wallet by default (luke-jr)
-- #10323 `00d3692` Update to latest libsecp256k1 master (sipa)
-- #10422 `cec9e1e` Fix timestamp in fee estimate debug message (morcos)
-- #10566 `5d034ee` [docs] Use the "domain name setup" image (previously unused) in the gitian docs (practicalswift)
-- #10534 `a514ac3` Clarify prevector::erase and avoid swap-to-clear (sipa)
-- #10575 `22ec768` Header include guideline (sipa)
-- #10480 `fbf5d3b` Improve commit-check-script.sh (sipa)
-- #10502 `1ad3d4e` scripted-diff: Remove BOOST_FOREACH, Q_FOREACH and PAIRTYPE (jtimon)
-- #10377 `b63be2c` Use rdrand as entropy source on supported platforms (sipa)
-- #9895 `228c319` Turn TryCreateDirectory() into TryCreateDirectories() (benma)
-- #10602 `d76e84a` Make clang-format use C++11 features (e.g. A<A<int>> instead of A<A<int> >) (practicalswift)
-- #10623 `c38f540` doc: Add 0.14.2 release notes (MarcoFalke)
-- #10276 `b750b33` contrib/verifybinaries: allow filtering by platform (knocte)
-- #10248 `01c4b14` Rewrite addrdb with less duplication using CHashVerifier (sipa)
-- #10577 `232508f` Add an explanation of quickly hashing onto a non-power of two range (gmaxwell)
-- #10608 `eee398f` Add a comment explaining the use of MAX_BLOCK_BASE_SIZE (gmaxwell)
-- #10728 `7397af9` fix typo in help text for removeprunedfunds (AkioNak)
-- #10193 `6dbcc74` scripted-diff: Remove #include <boost/foreach.hpp> (jtimon)
-- #10676 `379aed0` document script-based return fields for validateaddress (instagibbs)
-- #10651 `cef4b5c` Verify binaries from bitcoincore.org and bitcoin.org (TheBlueMatt)
-- #10786 `ca4c545` Add PR description to merge commit in github-merge.py (sipa)
-- #10812 `c5904e8` [utils] Allow bitcoin-cli's -rpcconnect option to be used with square brackets (jnewbery)
-- #10842 `3895e25` Fix incorrect Doxygen tag (@ince → @since). Doxygen parameter name matching (practicalswift)
-- #10681 `df0793f` add gdb attach process to test README (instagibbs)
-- #10789 `1124328` Punctuation/grammer fixes in rpcwallet.cpp (stevendlander)
-- #10655 `78f307b` Properly document target_confirmations in listsinceblock (RHavar)
-- #10917 `5c003cb` developer-notes: add reference to snake_case and PascalCase (benma)
-- #11003 `4b5a7ce` Docs: Capitalize bullet points in CONTRIBUTING guide (eklitzke)
-- #10968 `98aa3f6` Add instructions for parallel gitian builds (coblee)
-- #11076 `1c4b9b3` 0.15 release-notes nits: fix redundancy, remove accidental parenthesis & fix range style (practicalswift)
-- #11090 `8f0121c` Update contributor names in release-notes.md (Derek701)
-- #11056 `cbdd338` disable jni in builds (instagibbs)
-- #11080 `2b59cfb` doc: Update build-openbsd for 6.1 (laanwj)
-- #11119 `0a6af47` [doc] build-windows: Mention that only trusty works (MarcoFalke)
-- #11108 `e8ad101` Changing -txindex requires -reindex, not -reindex-chainstate (TheBlueMatt)
-- #9792 `342b9bc` FastRandomContext improvements and switch to ChaCha20 (sipa)
-- #9505 `67ed40e` Prevector Quick Destruct (JeremyRubin)
-- #10820 `ef37f20` Use cpuid intrinsics instead of asm code (sipa)
-- #9999 `a328904` [LevelDB] Plug leveldb logs to bitcoin logs (NicolasDorier)
-- #9693 `c5e9e42` Prevent integer overflow in ReadVarInt (gmaxwell)
-- #10129 `351d0ad` scheduler: fix sub-second precision with boost < 1.50 (theuni)
-- #10153 `fade788` logging: Fix off-by-one for shrinkdebugfile default (MarcoFalke)
-- #10305 `c45da32` Fix potential NPD introduced in b297426c (TheBlueMatt)
-- #10338 `daf3e7d` Maintain state across GetStrongRandBytes calls (sipa)
-- #10544 `a4fe077` Update to LevelDB 1.20 (sipa)
-- #10614 `cafe24f` random: fix crash on some 64bit platforms (theuni)
-- #10714 `2a09a38` Avoid printing incorrect block indexing time due to uninitialized variable (practicalswift)
-- #10837 `8bc6d1f` Fix resource leak on error in GetDevURandom (corebob)
-- #10832 `89bb036` init: Factor out AppInitLockDataDirectory and fix startup core dump issue (laanwj)
-- #10914 `b995a37` Add missing lock in CScheduler::AreThreadsServicingQueue() (TheBlueMatt)
-- #10958 `659c096` Update to latest Bitcoin patches for LevelDB (sipa)
-- #10919 `c1c671f` Fix more init bugs (TheBlueMatt)
+- #11909 `8897135` contrib: Replace developer keys with list of pgp fingerprints (MarcoFalke)
+- #12394 `fe53d5f` gitian-builder.sh: fix --setup doc, since lxc is default (Sjors)
+- #12468 `294a766` Add missing newline in init.cpp log message (Aesti)
+- #12308 `dcfe218` contrib: Add support for out-of-tree builds in gen-manpages.sh (laanwj)
+- #12451 `aae64a2` Bump leveldb subtree (MarcoFalke)
+- #12527 `d77b4a7` gitian-build.sh: fix signProg being recognized as two parameters (ken2812221)
+- #12588 `d74b01d` utils: Remove deprecated pyzmq call from python zmq example (kosciej)
+- #10271 `bc67982` Use `std::thread::hardware_concurrency`, instead of Boost, to determine available cores (fanquake)
+- #12097 `14475e2` scripts: Lint-whitespace: use perl instead of grep -p (Sjors)
+- #12098 `17c44b2` scripts: Lint-whitespace: add param to check last n commits (Sjors)
+- #11900 `842f61a` script: Simplify checkminimalpush checks, add safety assert (instagibbs)
+- #12567 `bb98aec` util: Print timestamp strings in logs using iso 8601 formatting (practicalswift)
+- #12572 `d8d9162` script: Lint-whitespace: find errors more easily (AkioNak)
+- #10694 `ae5bcc7` Remove redundant code in MutateTxSign(CMutableTransaction&, const std::string&) (practicalswift)
+- #12659 `3d16f58` Improve Fatal LevelDB Log Messages (eklitzke)
+- #12643 `0f0229d` util: Remove unused `sync_chain` (MarcoFalke)
+- #12102 `7fb8fb4` Apply hardening measures in bitcoind systemd service file (Flowdalic)
+- #12652 `55f490a` bitcoin-cli: Provide a better error message when bitcoind is not running (practicalswift)
+- #12630 `c290508` Provide useful error message if datadir is not writable (murrayn)
+- #11881 `624bee9` Remove Python2 support (jnewbery)
+- #12821 `082e26c` contrib: Remove unused import string (MarcoFalke)
+- #12829 `252c1b0` Python3 fixup (jnewbery)
+- #12822 `ff48f62` Revert 7deba93bdc76616011a9f493cbc203d60084416f and fix expired-key-sigs properly (TheBlueMatt)
+- #12820 `5e53b80` contrib: Fix check-doc script regexes (MarcoFalke)
+- #12713 `4490871` Track negated options in the option parser (eklitzke)
+- #12708 `b2e5fe8` Make verify-commits.sh test that merges are clean (sipa)
+- #12891 `3190785` logging: Add lint-logs.sh to check for newline termination (jnewbery)
+- #12923 `a7cbe38` util: Pass `pthread_self()` to `pthread_setschedparam` instead of 0 (laanwj)
+- #12871 `fb17fae` Add shell script linting: Check for shellcheck warnings in shell scripts (practicalswift)
+- #12970 `5df84de` logging: Bypass timestamp formatting when not logging (theuni)
+- #12987 `fe8fa22` tests/tools: Enable additional Python flake8 rules for automatic linting via Travis (practicalswift)
+- #12972 `0782508` Add python3 script shebang lint (ken2812221)
+- #13004 `58bbc55` Print to console by default when not run with -daemon (practicalswift)
+- #13039 `8b4081a` Add logging and error handling for file syncing (laanwj)
+- #13020 `4741ca5` Consistently log CValidationState on call failure (Empact)
+- #13031 `826acc9` Fix for utiltime to compile with msvc (sipsorcery)
+- #13119 `81743b5` Remove script to clean up datadirs (MarcoFalke)
+- #12954 `5a66642` util: Refactor logging code into a global object (jimpo)
+- #12769 `35eb9d6` Add systemd service to bitcoind in debian package (ghost)
+- #13146 `0bc980b` rpcauth: Make it possible to provide a custom password (laanwj)
+- #13148 `b62b437` logging: Fix potential use-after-free in logprintstr(…) (practicalswift)
+- #13214 `0612d96` Enable Travis checking for two Python linting rules we are currently not violating (practicalswift)
+- #13197 `6826989` util: Warn about ignored recursive -includeconf calls (kallewoof)
+- #13176 `d9ebb63` Improve CRollingBloomFilter performance: replace modulus with FastMod (martinus)
+- #13228 `d792e47` Add script to detect circular dependencies between source modules (sipa)
+- #13320 `e08c130` Ensure gitian-build.sh uses bash (jhfrontz)
+- #13301 `e4082d5` lint: Add linter to error on `#include <*.cpp>` (Empact)
+- #13374 `56f6936` utils and libraries: checking for bitcoin address in translations (kaplanmaxe)
+- #13230 `7c32b41` Simplify include analysis by enforcing the developer guide's include syntax (practicalswift)
+- #13450 `32bf4c6` Add linter: Enforce the source code file naming convention described in the developer notes (practicalswift)
+- #13479 `fa2ea37` contrib: Fix cve-2018-12356 by hardening the regex (loganaden)
+- #13448 `a90ca40` Add linter: Make sure we explicitly open all text files using UTF-8 encoding in Python (practicalswift)
+- #13494 `d67eff8` Follow-up to #13454: Fix broken build by exporting `LC_ALL=C` (practicalswift)
+- #13510 `03f3925` Scripts and tools: Obsolete #!/bin/bash shebang (DesWurstes)
+- #13577 `c9eb8d1` logging: Avoid nstart may be used uninitialized in appinitmain warning (mruddy)
+- #13603 `453ae5e` bitcoin-tx: Stricter check for valid integers (domob1812)
+- #13118 `c05c93c` RPCAuth Detection in Logs (Linrono)
+- #13647 `4027ec1` Scripts and tools: Fix `BIND_NOW` check in security-check.py (conradoplg)
+- #13692 `f5d166a` contrib: Clone core repo in gitian-build (MarcoFalke)
+- #13699 `4c6d1b9` contrib: Correct version check (kallewoof)
+- #13695 `dcc0cff` lint: Add linter for circular dependencies (Empact)
+- #13733 `0d1ebf4` utils: Refactor argsmanager a little (AtsukiTak)
+- #13714 `29b4ee6` contrib: Add lxc network setup for bionic host (ken2812221)
+- #13764 `f8685f4` contrib: Fix test-security-check fail in ubuntu 18.04 (ken2812221)
+- #13809 `77168f7` contrib: Remove debian and rpm subfolder (MarcoFalke)
+- #13799 `230652c` Ignore unknown config file options; warn instead of error (sipa)
+- #13894 `df9f712` shutdown: Stop threads before resetting ptrs (MarcoFalke)
+- #13925 `71dec5c` Merge leveldb subtree (MarcoFalke)
+- #13939 `ef86f26` lint: Make format string linter understand basic template parameter syntax (practicalswift)
+- #14105 `eb202ea` util: Report parse errors in configuration file (laanwj)
+- #12604 `9903537` Add DynamicMemoryUsage() to CDBWrapper to estimate LevelDB memory use (eklitzke)
+- #12495 `047865e` Increase LevelDB `max_open_files` (eklitzke)
+- #12784 `e80716d` Fix bug in memory usage calculation (unintended integer division) (practicalswift)
+- #12618 `becd8dd` Set `SCHED_BATCH` priority on the loadblk thread (eklitzke)
+- #12854 `5ca1509` Add P2P, Network, and Qt categories to the desktop icon (luke-jr)
+- #11862 `4366f61` Network specific conf sections (ajtowns)
+- #13441 `4a7e64f` Prevent shared conf files from failing with different available options in different binaries (achow101)
+- #13471 `5eca4e8` For AVX2 code, also check for AVX, XSAVE, and OS support (sipa)
+- #13503 `c655b2c` Document FreeBSD quirk. Fix FreeBSD build: Use std::min<int>(…) to allow for compilation under certain FreeBSD versions (practicalswift)
+- #13725 `07ce278` Fix bitcoin-cli --version (Empact)
+- #15188 `d711c62` Update zmq to 4.3.1 (rex4539)
+
+### Documentation
+- #12306 `216f9a4` Improvements to UNIX documentation (axvr)
+- #12309 `895fbd7` Explain how to update chainTxData in release process (laanwj)
+- #12317 `85123be` Document method for reviewers to verify chainTxData (jnewbery)
+- #12331 `d32528e` Properly alphabetize output of CLI --help option (murrayn)
+- #12322 `c345148` Remove step making cloned repository world-writable for Windows build (murrayn)
+- #12354 `b264528` add gpg key for fivepiece (fivepiece)
+- #11761 `89005dd` initial QT documentation (Sjors)
+- #12232 `fdc2188` Improve "Turn Windows Features On or Off" step (MCFX2)
+- #12487 `4528f74` init: Remove translation for `-blockmaxsize` option help (laanwj)
+- #12546 `a4a5fc7` Minor improvements to Compatibility Notes (randolf)
+- #12434 `21e2670` dev-notes: Members should be initialized (MarcoFalke)
+- #12452 `71f56da` clarified systemd installation instructions in init.md for Ubuntu users (DaveFromBinary)
+- #12615 `1f93491` allow for SIGNER containing spaces (ken2812221)
+- #12603 `85424d7` PeerLogicValidation interface (jamesob)
+- #12581 `12ac2f0` Mention configure without wallet in FreeBSD instructions (dbolser)
+- #12619 `8a709fb` Give hint about gitian not able to download (kallewoof)
+- #12668 `de2fcaa` do update before fetching packages in WSL build guide (nvercamm)
+- #12586 `e7721e6` Update osx brew install instruction (fanquake)
+- #12760 `7466a26` Improve documentation on standard communication channels (jimpo)
+- #12797 `0415b1e` init: Fix help message for checkblockindex (MarcoFalke)
+- #12800 `2d97611` Add note about our preference for scoped enumerations ("enum class") (practicalswift)
+- #12798 `174d016` Refer to witness reserved value as spec. in the BIP (MarcoFalke)
+- #12759 `d3908e2` Improve formatting of developer notes (eklitzke)
+- #12877 `2b54155` Use bitcoind in Tor documentation (knoxcard)
+- #12896 `b15485e` Fix conflicting statements about initialization in developer notes (practicalswift)
+- #12850 `319991d` add qrencode to brew install instructions (buddilla)
+- #12007 `cd8e45b` Clarify the meaning of fee delta not being a fee rate in prioritisetransaction RPC (honzik666)
+- #12927 `06ead15` fixed link, replaced QT with Qt (trulex)
+- #12852 `ebd786b` devtools: Setup ots git integration (MarcoFalke)
+- #12933 `3cf76c2` Refine header include policy (MarcoFalke)
+- #12951 `6df0c6c` Fix comment in FindForkInGlobalIndex (jamesob)
+- #12982 `a63b4e3` Fix inconsistent namespace formatting guidelines (ryanofsky)
+- #13026 `9b3a67e` Fix include comment in src/interfaces/wallet.h (promag)
+- #13012 `d1e3c5e` Add comments for chainparams.h, validation.cpp (jamesob)
+- #13064 `569e381` List support for BIP173 in bips.md (sipa)
+- #12997 `646b7f6` build-windows: Switch to Artful, since Zesty is EOL (MarcoFalke)
+- #12384 `c5f7efe` Add version footnote to tor.md (Willtech)
+- #13165 `627c376` Mention good first issue list in CONTRIBUTING.md (fanquake)
+- #13295 `fb77310` Update OpenBSD build instructions for OpenBSD 6.3 (practicalswift)
+- #13340 `3a8e3f4` remove leftover check-doc documentation (fanquake)
+- #13346 `60f0358` update bitcoin-dot-org links in release-process.md (fanquake)
+- #13372 `f014933` split FreeBSD build instructions out of build-unix.md (steverusso)
+- #13366 `861de3b` Rename “OS X” to the newer “macOS” convention (giulio92)
+- #13369 `f8bcef3` update transifex doc link (mess110)
+- #13312 `b22115d` Add a note about the source code filename naming convention (practicalswift)
+- #13460 `1939536` Remove note to install all boost dev packages (MarcoFalke)
+- #13476 `9501938` Fix incorrect shell quoting in FreeBSD build instructions (murrayn)
+- #13402 `43fa355` Document validationinterace callback blocking deadlock potential (TheBlueMatt)
+- #13488 `d6cf4bd` Improve readability of "Squashing commits" (wodry)
+- #13531 `ee02deb` Clarify that mempool txiter is `const_iterator` (MarcoFalke)
+- #13418 `01f9098` More precise explanation of parameter onlynet (wodry)
+- #13592 `1756cb4` Modify policy to not translate command-line help (ken2812221)
+- #13588 `b77c38e` Improve doc of options addnode, connect, seednode (wodry)
+- #13614 `17e9106` Update command line help for -printtoconsole and -debuglogfile (satwo, fanquake)
+- #13605 `8cc048e` corrected text to reflect new(er) process of specifying fingerprints (jhfrontz)
+- #13481 `b641f60` Rewrite some validation docs as lock annotations (MarcoFalke)
+- #13680 `30640f8` Remove outdated comment about miner ignoring CPFP (jamesob)
+- #13625 `7146672` Add release notes for -printtoconsole and -debuglogfile changes (satwo)
+- #13718 `f7f574d` Specify preferred Python string formatting technique (masonicboom)
+- #12764 `10b9a81` Remove field in getblocktemplate help that has never been used (conscott)
+- #13742 `d2186b3` Adjust bitcoincore.org links (MarcoFalke)
+- #13706 `94dd89e` Minor improvements to release-process.md (MitchellCash)
+- #13775 `ef4fac0` Remove newlines from error message (practicalswift)
+- #13803 `feb7dd9` add note to contributor docs about warranted PR's (kallewoof)
+- #13814 `67af7ef` Add BIP174 to list of implemented BIPs (sipa)
+- #13835 `c1cba35` Fix memory consistency model in comment (skeees)
+- #13824 `aa30e4b` Remove outdated net comment (MarcoFalke)
+- #13853 `317477a` correct versions in dependencies.md (fanquake)
+- #13872 `37ab117` Reformat -help output for help2man (real-or-random)
+- #13717 `8c3c402` Link to python style guidelines from developer notes (masonicboom)
+- #13895 `1cd5f2c` fix GetWarnings docs to reflect behavior (Empact)
+- #13911 `3e3a50a` Revert translated string change, clarify wallet log messages (PierreRochard)
+- #13908 `d6faea4` upgrade rescan time warning from minutes to >1 hour (masonicboom)
+- #13905 `73a09b4` fixed bitcoin-cli -help output for help2man (hebasto)
+- #14100 `2936dbc` Change documentation for =0 for non-boolean options (laanwj)
+- #14096 `465a583` Add reference documentation for descriptors language (sipa)
+- #12757 `0c5f67b` Clarify include guard naming convention (practicalswift)
+- #13844 `d3325b0` Correct the help output for `-prune` (hebasto)
+- #14509 `1b5af2c` [0.17] doc: use SegWit in getblocktemplate example (Sjors)
+- #14161 `5f51fd6` doc/descriptors.md tweaks (ryanofsky)
+- #14276 `85aacc4` Add autogen.sh in ARM Cross-compilation (walterwhite81)
 
 Credits
 =======
 
 Thanks to everyone who directly contributed to this release:
 
-- [The Bitcoin Core Developers](/doc/release-notes)
+- [The Bitcoin Core Developers](https://github.com/bitcoin/bitcoin/tree/master/doc/release-notes)
 - Adrian Gallagher
 - aunyks
 - coblee
+- cryptonexii
+- EP1JUNE
 - gabrieldov
+- jmutkawoa
+- Martin Smith
+- NeMO84
+- OlegKozhemiakin
+- ppm0
 - romanornr
 - shaolinfry
+- spl0i7
+- stedwms
 - ultragtx
+- VKoskiv
 - voidmain
+- wbsmolen
 - xinxi
+
+And to those that reported security issues:
+
+- awemany (for CVE-2018-17144, previously credited as "anonymous reporter")
